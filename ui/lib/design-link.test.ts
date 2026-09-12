@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { createDesignShareUrl, parseDesignShareUrl } from './design-link.ts';
+import { DEFAULT_COMPONENT_MATERIALS } from './component-materials.ts';
 
 const design = {
   params: { ej_ghz: 15, ec_ghz: 0.3, ng: 0.1, ncut: 30 },
@@ -20,6 +21,19 @@ describe('shareable design links', () => {
   it('ignores ordinary and incomplete links', () => {
     assert.equal(parseDesignShareUrl('http://localhost:3100/'), null);
     assert.equal(parseDesignShareUrl('http://localhost:3100/?design=1&ej=15'), null);
+  });
+
+  it('round-trips independent component materials without changing the sensitivity pair', () => {
+    const customized = { ...design, componentMaterials: { ...DEFAULT_COMPONENT_MATERIALS, capacitor: 'Ta', package: 'Cu', substrate: 'sapphire' } };
+    assert.deepEqual(parseDesignShareUrl(createDesignShareUrl(customized, 'https://example.test')), customized);
+  });
+
+  it('rejects incomplete, unknown and malformed component assignments', () => {
+    const url = new URL(createDesignShareUrl(design, 'https://example.test'));
+    for (const value of ['{', '{}', JSON.stringify({ ...DEFAULT_COMPONENT_MATERIALS, package: 'Unknownium' }), JSON.stringify({ ...DEFAULT_COMPONENT_MATERIALS, extra: 'Au' })]) {
+      url.searchParams.set('component_materials', value);
+      assert.equal(parseDesignShareUrl(url.toString()), null);
+    }
   });
 
   it('clamps numeric values and rejects unknown materials', () => {

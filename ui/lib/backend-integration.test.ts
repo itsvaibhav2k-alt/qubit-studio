@@ -7,6 +7,9 @@ import { TOPIC_IDS } from './explain-topics.ts';
 import { createExplainHandler } from './explain-handler.ts';
 import { createDesignShareUrl, parseDesignShareUrl } from './design-link.ts';
 import { buildDesignReportPdf } from './design-report.ts';
+import { DEFAULT_COMPONENT_MATERIALS } from './component-materials.ts';
+import { parseChipSnapshot } from './insight-snapshot.ts';
+import { buildExplainUserPrompt } from './explain-llm.ts';
 
 const fixtures = JSON.parse(readFileSync(new URL('../../qa/browser/fixtures/solver.json', import.meta.url), 'utf8'));
 const goals = { target_ghz: 5, tolerance_ghz: .25, min_anharmonicity_mhz: 200, max_dispersion_khz: 10 };
@@ -33,6 +36,22 @@ test('every expanded topic is accepted by the bounded route without a live provi
     assert.equal(response.status, 200, topic);
   }
   assert.deepEqual(seen, [...TOPIC_IDS]);
+});
+
+test('Myla receives current component appearances and exploded state while electrical evidence stays fixed', () => {
+  const original = snapshot();
+  const customized = { ...original, selected_part: 'substrate' as const, view_explode: 1,
+    rendered_component_materials: { ...DEFAULT_COMPONENT_MATERIALS, capacitor: 'Ta', package: 'Cu', substrate: 'sapphire' } };
+  const parsed = parseChipSnapshot(customized);
+  assert.ok(parsed.ok);
+  assert.deepEqual(parsed.snapshot.outputs, original.outputs);
+  const local = composeLocalMyla('materials', parsed.snapshot).body;
+  assert.match(local, /Tantalum/); assert.match(local, /Copper/); assert.match(local, /Sapphire/);
+  assert.match(composeLocalMyla('substrate', parsed.snapshot).body, /Sapphire/);
+  assert.match(composeLocalMyla('assembly', parsed.snapshot).body, /separated layers/);
+  const prompt = buildExplainUserPrompt(['materials', 'assembly'], parsed.snapshot);
+  assert.match(prompt, /"rendered_capacitor_material": "Ta"/);
+  assert.match(prompt, /"view_explode":1/);
 });
 
 test('share links retain full main goal bounds and exact electrical coordinates', () => {

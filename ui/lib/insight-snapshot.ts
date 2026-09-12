@@ -1,5 +1,7 @@
 import { PART_BY_ID, type PartId } from './parts.ts';
 import { MATERIAL_RECORDS } from './material-records.ts';
+import type { ComponentMaterials } from './component-materials.ts';
+import { parseComponentMaterials } from './component-material-selection.ts';
 import type { DesignGoals, DeviceParams, DeviceResult } from './types.ts';
 import type { ChipSnapshot, SnapshotExperiment, SnapshotMaterials, SnapshotOutputs } from './insight-types.ts';
 
@@ -55,6 +57,7 @@ export function buildChipSnapshot(input: {
   selected: PartId | null; stale: boolean; error: string | null;
   explode?: number;
   goals?: DesignGoals; materials?: { topMaterial: string; baseMaterial: string };
+  componentMaterials?: ComponentMaterials;
   experiments?: Array<Omit<SnapshotExperiment, 'freshness'> & { current: boolean }>;
 }): ChipSnapshot {
   const matching = input.result !== null && sameParams(input.params, input.result);
@@ -71,6 +74,7 @@ export function buildChipSnapshot(input: {
     error: input.error ? 'The current solver calculation failed.' : null,
     ...(input.goals ? { goals: { ...input.goals } } : {}),
     ...(input.materials ? { materials: snapshotMaterials(input.materials) } : {}),
+    ...(input.componentMaterials ? { rendered_component_materials: { ...input.componentMaterials } } : {}),
     ...(input.experiments ? { experiments: input.experiments.map(({ current, ...evidence }) => ({ ...evidence, freshness: current ? 'current' as const : 'outdated' as const })) } : {}),
   };
 }
@@ -142,6 +146,9 @@ export function parseChipSnapshot(body: unknown): { ok: true; snapshot: ChipSnap
     if (!isObject(body.materials) || !shortText(body.materials.topMaterial, 80) || !shortText(body.materials.baseMaterial, 80)) return invalid('Snapshot material selection is invalid.');
     materials = snapshotMaterials({ topMaterial: body.materials.topMaterial, baseMaterial: body.materials.baseMaterial });
   }
+  const componentMaterials = body.rendered_component_materials === undefined
+    ? undefined : parseComponentMaterials(body.rendered_component_materials);
+  if (componentMaterials === null) return invalid('Snapshot rendered component materials must assign a known appearance to all seven parts.');
   if (body.view_explode !== undefined && !numberIn(body.view_explode, 0, 1)) return invalid('Snapshot view context is invalid.');
   let experiments: SnapshotExperiment[] | undefined;
   if (body.experiments !== undefined) {
@@ -165,6 +172,7 @@ export function parseChipSnapshot(body: unknown): { ok: true; snapshot: ChipSnap
     readiness: body.readiness as ChipSnapshot['readiness'], stale: body.stale,
     error: body.error ? 'The current solver calculation failed.' : null,
     ...(body.view_explode === undefined ? {} : { view_explode: body.view_explode as number }), ...(goals ? { goals } : {}), ...(materials ? { materials } : {}), ...(experiments ? { experiments } : {}),
+    ...(componentMaterials ? { rendered_component_materials: componentMaterials } : {}),
   } };
 }
 

@@ -141,7 +141,7 @@ export const TOPICS: Record<TopicId, TopicSpec> = {
     label: 'Materials',
     symbol: 'stack',
     tex: '\\mathrm{stack}',
-    ask: 'Explain the current top/base materials. Color is visual. Any E_J/E_C scaling is a teaching approximation, not a capacitance extract or T1 prediction.',
+    ask: 'Explain the rendered_component_materials assigned independently to the seven components. The top/base materials are a separate sensitivity pair and may differ. Color, finish and transparency are illustrative; electrical scaling is an explicit teaching scenario, not a capacitance extract or T1 prediction.',
   },
   goals: {
     id: 'goals',
@@ -155,7 +155,7 @@ export const TOPICS: Record<TopicId, TopicSpec> = {
     label: 'Exploded assembly',
     symbol: 'view',
     tex: '\\mathrm{view}',
-    ask: 'Explain the assembly/explode slider. It is view-only and does not change any calculated value.',
+    ask: 'Explain the current Assembled/Exploded view and how separated components can be selected and assigned materials. View and appearance changes do not change any calculated value.',
   },
   baseline: {
     id: 'baseline',
@@ -268,6 +268,7 @@ export function topicNumbers(
         ...shared,
         top_material: snapshot.materials?.topMaterial ?? null,
         base_material: snapshot.materials?.baseMaterial ?? null,
+        ...Object.fromEntries(Object.entries(snapshot.rendered_component_materials ?? {}).map(([part, id]) => [`rendered_${part}_material`, id])),
       };
     case 'goals':
       return {

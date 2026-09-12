@@ -4,6 +4,7 @@ import { createDesignShareUrl, parseDesignShareUrl, type ShareableDesign } from 
 import { validDeviceParams } from '@/lib/device-snapshot';
 import { validExperimentGoals } from '@/lib/experiment-session';
 import { MATERIAL_CATALOG } from '@/lib/material-records';
+import { parseComponentMaterials } from '@/lib/component-material-selection';
 
 interface SavedDesign extends ShareableDesign { id: string; savedAt: string }
 const HISTORY_KEY = 'qubit-studio-saved-designs-v2';
@@ -12,7 +13,8 @@ function valid(value: unknown): value is SavedDesign {
   const item = value as SavedDesign;
   return !!item.params && validDeviceParams(item.params) && !!item.goals && validExperimentGoals(item.goals)
     && typeof item.id === 'string' && typeof item.savedAt === 'string' && Number.isFinite(Date.parse(item.savedAt))
-    && (MATERIAL_CATALOG as readonly string[]).includes(item.topMaterial) && (MATERIAL_CATALOG as readonly string[]).includes(item.baseMaterial);
+    && (MATERIAL_CATALOG as readonly string[]).includes(item.topMaterial) && (MATERIAL_CATALOG as readonly string[]).includes(item.baseMaterial)
+    && (item.componentMaterials === undefined || parseComponentMaterials(item.componentMaterials) !== null);
 }
 export default function SavedDesigns({ design, onRestore }: { design: ShareableDesign; onRestore: (design: ShareableDesign) => void }) {
   const [history, setHistory] = useState<SavedDesign[]>([]);

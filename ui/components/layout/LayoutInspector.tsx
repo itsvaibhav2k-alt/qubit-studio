@@ -12,6 +12,9 @@ import { PART_BY_ID } from '@/lib/parts';
 import { TOPICS, TOPIC_IDS } from '@/lib/explain-topics';
 import { num } from '@/lib/format';
 import type { DeviceParams } from '@/lib/types';
+import ComponentMaterialPicker from '@/components/ComponentMaterialPicker';
+import type { ComponentMaterials } from '@/lib/component-materials';
+import type { PartId } from '@/lib/parts';
 
 type Props = ComponentProps<typeof Inspector> & {
   readOnly: boolean;
@@ -21,6 +24,8 @@ type Props = ComponentProps<typeof Inspector> & {
   onInspect: () => void;
   solverOpen: boolean;
   onSolverOpen: (open: boolean) => void;
+  componentMaterials: ComponentMaterials;
+  onComponentMaterialChange: (part: PartId, material: string) => void;
 };
 const copy = {
   board:{name:'Carrier board',id:'PCB',role:'The carrier supports the chip and its bond contacts. It adds no electrical input to this model.',label:''},
@@ -49,6 +54,7 @@ export default function LayoutInspector(props: Props) {
       <div className="layout-component-id">{text?.id ?? 'SELECT A COMPONENT'}</div>
       <h1>{text?.name ?? 'Explore the chip'}</h1>
       <p className="layout-component-role">{text?.role ?? 'Select a component in the layout or circuit to inspect its model parameter.'}</p>
+      {selected && <ComponentMaterialPicker key={selected} part={selected} materials={props.componentMaterials} onChange={props.onComponentMaterialChange}/>}
       {readOnly && <p className="layout-readonly"><LockKeyhole size={15}/>{candidate ? `${candidateCurrent?'Candidate':'Outdated candidate'} values · read only` : 'Applied device · read only in Design'}</p>}
       {part?.param && <div className="layout-primary-field"><ParamField key={`${part.param}-${readOnly?'design':'explore'}`} paramKey={part.param} value={inspectedParams[part.param]} onChange={onChange} disabled={readOnly} label={text?.label}/><div className="layout-field-bounds"><span>{PARAMS[part.param].min}</span><span>{PARAMS[part.param].max} {PARAMS[part.param].unit}</span></div></div>}
       {selected && <button className="btn primary layout-inspect-action" onClick={onInspect}>{inspecting?<ArrowLeft size={18}/>:<ScanSearch size={18}/>} {inspecting?'Return to full chip':INSPECTIONS[selected].action}</button>}

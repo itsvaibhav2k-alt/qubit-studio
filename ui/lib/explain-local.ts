@@ -2,6 +2,8 @@ import { formatTopicHeadline, type TopicId } from './explain-topics.ts';
 import { parseChipSnapshot } from './insight-snapshot.ts';
 import { num, signed } from './format.ts';
 import type { ChipSnapshot } from './insight-types.ts';
+import { resolveMaterial } from './component-materials.ts';
+import { PART_BY_ID, type PartId } from './parts.ts';
 
 
 function typicalF01(ghz: number): string {
@@ -39,7 +41,11 @@ export function composeLocalMyla(topic: TopicId, snapshot: ChipSnapshot): { topi
   const title = formatTopicHeadline(topic, snapshot);
   if (snapshot.readiness !== 'ready' || !snapshot.outputs || !parseChipSnapshot(snapshot).ok) return { topic, title, body: 'Wait for a completed current calculation.', model: 'local-teaching' };
   const ratio = p.ratio;
-  const body = brief(topic, snapshot, p, o, ratio);
+  const selected = snapshot.selected_part;
+  const assignment = selected && topic === selected ? snapshot.rendered_component_materials?.[selected] : undefined;
+  const material = assignment ? resolveMaterial(assignment) : undefined;
+  const appearance = material ? `The rendered ${PART_BY_ID[selected!].name.toLowerCase()} uses ${material.name} (${material.formula}) with a ${material.finish} finish. This appearance choice does not change the electrical inputs.\n\n` : '';
+  const body = appearance + brief(topic, snapshot, p, o, ratio);
   return { topic, title, body, model: 'local-teaching' };
 }
 
@@ -95,12 +101,18 @@ function brief(
       return `${typicalRatio(ratio)} Koch et al. introduced the transmon specifically so that exponential charge-noise suppression beats the modest loss of anharmonicity.\nIf you need more $|\\alpha|$, you pay for it with a lower ratio and a louder charge curve.`;
     case 'ncut':
       return `$\\mathrm{ncut}=${p.ncut}$ truncates the charge basis to $n\\in[-\\mathrm{ncut},+\\mathrm{ncut}]$. It is a numerical cutoff, not a lithography step.\n$30$ is enough for a typical transmon; if $E_J/E_C$ is very large and levels look unstable, raise it to check convergence before trusting $f_{01}$.`;
-    case 'materials':
-      return `Live stack is ${snapshot.materials?.topMaterial ?? 'the top metal'} on ${snapshot.materials?.baseMaterial ?? 'the base'}. Color is a room-light stand-in so you can tell films apart — not a measured kinetic inductance.\nThis isolated-transmon solver still takes $E_J$ and $E_C$ as numbers. It does not compute $T_1$ from the catalog.`;
+    case 'materials': {
+      const assignments = snapshot.rendered_component_materials;
+      const rendered = assignments ? Object.entries(assignments).map(([part, id]) => {
+        const material = resolveMaterial(id);
+        return `${PART_BY_ID[part as PartId].name}: ${material.name} (${material.formula})`;
+      }).join('; ') : 'No independent component assignments were recorded in this snapshot.';
+      return `Rendered components: ${rendered}\n\nThe film/substrate sensitivity pair is ${snapshot.materials?.topMaterial ?? 'unspecified'} on ${snapshot.materials?.baseMaterial ?? 'unspecified'}. Component finishes independently change color, reflection, texture, and transparency. These are illustrative appearances. The solver still takes $E_J$ and $E_C$ as numbers and does not compute $T_1$ from the catalog.`;
+    }
     case 'goals':
       return `Targets are $f_{01}=${num(snapshot.goals?.target_ghz ?? 5, 2)}\\,\\mathrm{GHz}$, $|\\alpha|\\ge ${num(snapshot.goals?.min_anharmonicity_mhz ?? 200, 0)}\\,\\mathrm{MHz}$, dispersion $\\le ${num(snapshot.goals?.max_dispersion_khz ?? 10, 1)}\\,\\mathrm{kHz}$.\nLive chip: $f_{01}=${num(f01, 2)}\\,\\mathrm{GHz}$, $\\alpha=${signed(alpha, 0)}\\,\\mathrm{MHz}$. Search only scans a grid of $E_J,E_C$; a pass is not a fabricated optimum.`;
     case 'assembly':
-      return `Explode is camera/layout only (now ${num(snapshot.view_explode ?? 0, 2)}). Nothing in the Hamiltonian depends on it.\nUse it to see the junction versus the pads; then collapse it before you screenshot a “chip.”`;
+      return `The chip is ${(snapshot.view_explode ?? 0) > 0 ? 'shown as separated layers' : 'assembled'}. Exploding the view separates the cover, circuit films, die, carrier, and frame so their edges and undersides can be inspected.\nThe component buttons select each part for material customization. Its material remains the same in both views. Layer separation and optical finishes do not change the Hamiltonian or the calculated results.`;
     case 'baseline': {
       const b = snapshot.baseline;
       if (!b) {

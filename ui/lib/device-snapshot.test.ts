@@ -62,4 +62,14 @@ describe('report provenance', () => {
     assert.equal(report.experiments[0].current, false);
     assert.equal(report.experiments[0].inputs.params_ej_ghz, 16);
   });
+  it('records independent component materials without changing the electrical snapshot', () => {
+    const componentMaterials = { junction: 'Al', capacitor: 'Ta', gate: 'Nb', ground: 'Al', substrate: 'sapphire', board: 'laminate', package: 'Cu' };
+    const report = buildExportReport({ ...input, componentMaterials });
+    assert.ok(report);
+    assert.deepEqual(report.parameters, input.params);
+    assert.equal(report.result, result);
+    assert.deepEqual(report.rendered_component_materials?.assignments, componentMaterials);
+    componentMaterials.package = 'Au';
+    assert.equal(report.rendered_component_materials?.assignments.package, 'Cu');
+  });
 });

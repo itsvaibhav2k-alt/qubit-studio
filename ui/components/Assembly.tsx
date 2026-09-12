@@ -2,75 +2,120 @@
 
 import { Edges, Line, RoundedBox } from '@react-three/drei';
 import type { ThreeEvent } from '@react-three/fiber';
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, useContext, useEffect, useMemo } from 'react';
 import { BoxGeometry, CanvasTexture, CatmullRomCurve3, ExtrudeGeometry, Path, Shape, SphereGeometry, SRGBColorSpace, TubeGeometry, Vector3, Vector2, LatheGeometry, TorusGeometry } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { ANCHORS, BOARD, CHIP, FRAME, GATE, GROUND, JUNCTION, PADS, PLATE } from '@/lib/chip-geometry';
+import { ANCHORS, BOARD, CHIP, DIE_SCALE, FRAME, GATE, GROUND, JUNCTION, PADS, PLATE, isDiePart } from '@/lib/chip-geometry';
 import type { PartId } from '@/lib/parts';
+import { DEFAULT_COMPONENT_MATERIALS, resolveMaterial, type MaterialProfile } from '@/lib/component-materials';
 import { planContour, LEFT_ELECTRODE, RIGHT_ELECTRODE, SUBSTRATE_PLAN, TOP_GROUND_PLAN, GATE_PLAN } from '@/lib/chip-plan';
 
 export const ACCENT = '#1a6fe0';
 
 /** Illustrative appearance only. None of these values enter the calculation. */
 const MAT = {
-  gold: { color: '#dfb66a', metalness: 1, roughness: 0.48 },
-  goldDeep: { color: '#ac8649', metalness: 1, roughness: 0.50 },
-  graphite: { color: '#8b8880', metalness: 0.95, roughness: 0.52 },
-  teal: { color: '#124355', metalness: 0.08, roughness: 0.58, clearcoat: 0.12, clearcoatRoughness: 0.45 },
-  chip: { color: '#07111c', metalness: 0.0, roughness: 0.34, clearcoat: 0, clearcoatRoughness: 0.15 },
-  silver: { color: '#c3c8cd', metalness: 0.98, roughness: 0.48 },
-  screw: { color: '#dfba77', metalness: 1, roughness: 0.42 },
+  gold: { color: '#e2b55b', metalness: 1, roughness: 0.34 },
+  goldDeep: { color: '#b18136', metalness: 1, roughness: 0.38 },
+  graphite: { color: '#959993', metalness: 0.96, roughness: 0.44 },
+  laminate: { color: '#60272e', metalness: 0.04, roughness: 0.62, clearcoat: 0.18, clearcoatRoughness: 0.4 },
+  chip: { color: '#141c2c', metalness: 0.28, roughness: 0.17, clearcoat: 0.65, clearcoatRoughness: 0.12, iridescence: 0.16, iridescenceIOR: 1.45, iridescenceThicknessRange: [180, 320] as [number, number] },
+  ground: { color: '#667581', metalness: 0.98, roughness: 0.25 },
+  silver: { color: '#b9c6d0', metalness: 1, roughness: 0.31 },
+  screw: { color: '#d5b474', metalness: 1, roughness: 0.28 },
   black: { color: '#0e1114', metalness: 0.2, roughness: 0.8 },
 } as const;
 
 const PartColor = createContext<string | undefined>(undefined);
+const PartMaterial = createContext<MaterialProfile | undefined>(undefined);
 type MatKind = keyof typeof MAT;
 
 // Brushed metal microfinish, not a decorative repeating pattern. All fine marks are
 // deterministic and restrained so grazing reflections reveal machining without glitter.
-const finishes = new Map<string, CanvasTexture>();
-function surfaceFinish(kind: MatKind) {
+type FinishVariant = 'machined' | 'brushed' | 'crystalline' | 'ceramic' | 'woven';
+const finishes = new Map<FinishVariant, CanvasTexture>();
+function surfaceFinish(kind: MatKind, finish: MaterialProfile['finish'] = 'brushed') {
   if (typeof document === 'undefined') return undefined;
-  const cached = finishes.get(kind); if (cached) return cached;
+  // Pool by actual pixel recipe, not part or selected element. Exploring the entire
+  // catalog creates at most five finish maps instead of one 2K map per kind × finish.
+  const variant: FinishVariant = finish === 'brushed'
+    ? kind === 'gold' || kind === 'goldDeep' ? 'machined' : 'brushed'
+    : finish === 'ceramic' ? kind === 'laminate' ? 'woven' : 'ceramic' : 'crystalline';
+  const cached = finishes.get(variant); if (cached) return cached;
   const canvas = document.createElement('canvas'); canvas.width = canvas.height = 2048;
   const ctx = canvas.getContext('2d'); if (!ctx) return undefined;
-  ctx.fillStyle = '#bcbcbc'; ctx.fillRect(0, 0, 2048, 2048);
-  for (let y = 0; y < 2048; y++) {
-    const shade = Math.round(179 + 8 * Math.sin(y * 0.028) + 7 * Math.sin(y * 0.73));
-    ctx.fillStyle = `rgb(${shade},${shade},${shade})`; ctx.fillRect(0,y,2048,1);
-  }
   let seed = 37;
   const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-  // Fine tool travel and overlapping cutter sweeps modulate the reflected light.
-  for (let i = 0; i < 48000; i++) {
-    const shade = 90 + random() * 150;
-    ctx.strokeStyle = `rgba(${shade},${shade},${shade},${0.15 + random() * 0.3})`;
-    ctx.lineWidth = 0.5 + random();
-    const x = random() * 2048, y = random() * 2048;
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 8 + random() * 100, y + random() * 0.6); ctx.stroke();
-  }
-  if (kind === 'gold' || kind === 'goldDeep') {
-    for (let row = -1; row < 11; row++) for (let col = -1; col < 11; col++) {
-      for (let ring = 0; ring < 36; ring++) {
-        ctx.strokeStyle = ring % 3 === 0 ? 'rgba(75,75,75,0.11)' : 'rgba(235,235,235,0.12)';
-        ctx.lineWidth = 0.85; ctx.beginPath();
-        ctx.arc(col * 220 + row * 27, row * 210, 40 + ring * 3.5, -2.7, 1.2); ctx.stroke();
+  if (variant === 'machined' || variant === 'brushed') {
+    ctx.fillStyle = '#e8e8e8'; ctx.fillRect(0, 0, 2048, 2048);
+    for (let y = 0; y < 2048; y++) {
+      const shade = Math.round(227 + 4 * Math.sin(y * 0.028) + 5 * Math.sin(y * 0.73));
+      ctx.fillStyle = `rgb(${shade},${shade},${shade})`; ctx.fillRect(0, y, 2048, 1);
+    }
+    // Fine tool travel modulates reflected light without changing material colour.
+    for (let i = 0; i < 48000; i++) {
+      const shade = 185 + random() * 70;
+      ctx.strokeStyle = `rgba(${shade},${shade},${shade},${0.15 + random() * 0.3})`;
+      ctx.lineWidth = 0.5 + random();
+      const x = random() * 2048, y = random() * 2048;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 8 + random() * 100, y + random() * 0.6); ctx.stroke();
+    }
+    if (variant === 'machined') {
+      for (let row = -1; row < 11; row++) for (let col = -1; col < 11; col++) {
+        for (let ring = 0; ring < 36; ring++) {
+          ctx.strokeStyle = ring % 3 === 0 ? 'rgba(75,75,75,0.11)' : 'rgba(235,235,235,0.12)';
+          ctx.lineWidth = 0.85; ctx.beginPath();
+          ctx.arc(col * 220 + row * 27, row * 210, 40 + ring * 3.5, -2.7, 1.2); ctx.stroke();
+        }
       }
+    }
+  } else {
+    const ceramic = variant === 'ceramic' || variant === 'woven';
+    // Polished metal and crystal share the same fine grain; their PBR values supply
+    // their optical differences. Woven laminate retains a separate fibre texture.
+    ctx.fillStyle = ceramic ? '#d9d9d9' : '#ededed'; ctx.fillRect(0, 0, 2048, 2048);
+    for (let i = 0; i < 52000; i++) {
+      const value = Math.round(160 + random() * 90), x = random() * 2048, y = random() * 2048;
+      ctx.fillStyle = `rgba(${value},${value},${value},${ceramic ? 0.34 : 0.1})`;
+      ctx.fillRect(x, y, ceramic ? 2 : 1, 1);
+    }
+    if (variant === 'woven') for (let t = 0; t < 2048; t += 6) {
+      ctx.strokeStyle = 'rgba(100,100,100,0.075)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(t, 0); ctx.lineTo(t, 2048); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, t); ctx.lineTo(2048, t); ctx.stroke();
     }
   }
   const texture = new CanvasTexture(canvas); texture.anisotropy = 16;
-  finishes.set(kind, texture); return texture;
+  finishes.set(variant, texture); return texture;
 }
 
-function Material({ kind, selected }: { kind: MatKind; selected: boolean }) {
-  const color = useContext(PartColor);
-  const metal = !['teal', 'chip', 'black'].includes(kind);
-  return <meshPhysicalMaterial {...MAT[kind]} color={color ?? MAT[kind].color} envMapIntensity={kind === 'chip' ? 0.25 : 1} specularIntensity={kind === 'chip' ? 0.25 : 1}
-    bumpMap={metal ? surfaceFinish(kind) : undefined}
-    roughnessMap={metal ? surfaceFinish(kind) : undefined}
-    bumpScale={kind === 'silver' ? 0.00012 : 0.00025}
-    anisotropy={metal ? 0.30 : 0}
-    emissive={selected ? ACCENT : '#000000'} emissiveIntensity={selected ? 0.045 : 0} />;
+function Material({ kind, selected, alphaMap, fixed = false, surface = 'front', attach }: {
+  kind: MatKind; selected: boolean; alphaMap?: CanvasTexture | null; fixed?: boolean;
+  surface?: 'front' | 'back' | 'edge'; attach?: string;
+}) {
+  const tint = useContext(PartColor);
+  const assigned = useContext(PartMaterial);
+  // Package is a plated housing with a separate Al shield. The default preserves that
+  // construction; a custom package profile is deliberately visible on both large surfaces.
+  const profile = fixed || kind === 'black' || (kind === 'graphite' && assigned?.id === 'Au') ? undefined : assigned;
+  const finish = profile?.finish ?? (kind === 'chip' ? 'crystalline' : kind === 'laminate' ? 'ceramic' : 'brushed');
+  const metalness = profile?.metalness ?? MAT[kind].metalness;
+  const roughness = Math.min(0.92, (profile?.roughness ?? MAT[kind].roughness) + (kind === 'ground' ? 0.07 : kind === 'goldDeep' ? 0.06 : 0) + (surface === 'front' ? 0 : surface === 'back' ? 0.16 : 0.22));
+  const textureKind = kind === 'laminate' && profile && profile.id !== 'laminate' ? 'chip' : kind;
+  const brushed = finish === 'brushed' && metalness > 0.5;
+  return <meshPhysicalMaterial attach={attach} {...MAT[kind]}
+    color={fixed || kind === 'black' ? MAT[kind].color : (tint ?? profile?.color ?? MAT[kind].color)}
+    metalness={metalness} roughness={roughness}
+    clearcoat={profile?.clearcoat ?? (kind === 'chip' ? 0.65 : kind === 'laminate' ? 0.18 : 0)}
+    clearcoatRoughness={profile?.clearcoatRoughness ?? 0.16}
+    transmission={profile?.transmission ?? 0} thickness={profile?.transmission ? 0.06 : 0}
+    ior={profile?.ior ?? 1.5} iridescence={profile?.iridescence ?? (kind === 'chip' ? 0.16 : 0)}
+    iridescenceIOR={1.45} iridescenceThicknessRange={[120, 260]}
+    envMapIntensity={surface === 'front' ? 1.05 : 0.88} specularIntensity={1}
+    alphaMap={alphaMap} alphaTest={alphaMap ? 0.5 : 0}
+    bumpMap={surfaceFinish(textureKind, finish)} roughnessMap={surfaceFinish(textureKind, finish)}
+    bumpScale={surface === 'edge' ? 0.00015 : brushed ? 0.00004 : finish === 'ceramic' ? 0.000045 : 0.000012}
+    anisotropy={brushed ? 0.48 : 0} anisotropyRotation={surface === 'back' ? Math.PI / 2 : 0}
+    emissive={selected ? ACCENT : '#000000'} emissiveIntensity={selected ? 0.035 : 0} />;
 }
 
 function roundedRect(size: number, r: number): Shape {
@@ -88,6 +133,19 @@ function roundedRect(size: number, r: number): Shape {
   return s;
 }
 
+/** Keep cap lithography aligned while giving cut walls non-degenerate machining UVs. */
+function extrusionUVs(geometry: ExtrudeGeometry, width: number, height: number, depth: number, bottom: number) {
+  const uv = geometry.getAttribute('uv'), pos = geometry.getAttribute('position'), normal = geometry.getAttribute('normal');
+  for (let i = 0; i < uv.count; i++) {
+    if (Math.abs(normal.getZ(i)) >= 0.85) {
+      uv.setXY(i, pos.getX(i) / width + 0.5, pos.getY(i) / height + 0.5);
+    } else {
+      const alongWall = Math.abs(normal.getX(i)) > Math.abs(normal.getY(i)) ? pos.getY(i) / height : pos.getX(i) / width;
+      uv.setXY(i, alongWall + 0.5, (pos.getZ(i) - bottom) / depth);
+    }
+  }
+}
+
 function ringGeometry(outer: number, inner: number, depth: number, bevel: number, radius: number): ExtrudeGeometry {
   const shape = roundedRect(outer - 2 * bevel, radius);
   const hole = roundedRect(inner + 2 * bevel, radius * 0.5);
@@ -100,11 +158,7 @@ function ringGeometry(outer: number, inner: number, depth: number, bevel: number
     bevelSegments: 3,
     curveSegments: 12,
   });
-  // ExtrudeGeometry emits world-space cap UVs. Normalize the negative half as well,
-  // otherwise clamped sampling leaves half of the metal completely untextured.
-  const uv = geometry.getAttribute('uv');
-  const positions = geometry.getAttribute('position');
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, positions.getX(i) / outer + 0.5, positions.getY(i) / outer + 0.5);
+  extrusionUVs(geometry, outer, outer, depth, -bevel);
   return geometry;
 }
 
@@ -147,8 +201,7 @@ function roundedPanel(w: number, h: number, r: number): Shape {
 function metalExtrusion(shape: Shape, depth: number, bevel: number, w: number, h: number) {
   const geometry = new ExtrudeGeometry(shape, {depth: depth - 2 * bevel, bevelEnabled: true,
     bevelThickness: bevel, bevelSize: bevel, bevelSegments: 5, curveSegments: 40});
-  const uv = geometry.getAttribute('uv'), pos = geometry.getAttribute('position');
-  for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) / w + 0.5, pos.getY(i) / h + 0.5);
+  extrusionUVs(geometry, w, h, depth, -bevel);
   return geometry;
 }
 
@@ -172,7 +225,7 @@ function Screw({ position, r = 0.056 }: { position: [number, number, number]; r?
   return <group position={position}>
     <mesh geometry={seat} receiveShadow><meshPhysicalMaterial {...MAT.screw} /></mesh>
     <mesh position-y={-0.011} rotation-x={-Math.PI / 2} geometry={head} castShadow receiveShadow>
-      <Material kind="gold" selected={false} />
+      <Material kind="gold" selected={false} fixed />
     </mesh>
     <mesh position-y={-0.014}><cylinderGeometry args={[r * 0.78, r * 0.78, 0.004, 32]} />
       <meshStandardMaterial color="#100c06" roughness={0.65} metalness={0.55} /></mesh>
@@ -199,11 +252,11 @@ function RailMark({ sign }: { sign: number }) {
     const canvas = document.createElement('canvas'); canvas.width = 1024; canvas.height = 96;
     const ctx = canvas.getContext('2d'); if (!ctx) return null;
     ctx.clearRect(0, 0, 1024, 96); ctx.fillStyle = '#3f3b32'; ctx.font = '32px monospace';
-    ctx.textAlign = 'center'; ctx.fillText(sign > 0 ? 'QUBIT STUDIO  /  01' : 'TRANSMON  /  ILLUSTRATIVE', 512, 60);
+    ctx.textAlign = 'center'; ctx.fillText(sign > 0 ? 'QUBIT STUDIO   /   QS–01' : 'TRANSMON   •   REV A', 512, 60);
     const map = new CanvasTexture(canvas); map.colorSpace = SRGBColorSpace; map.anisotropy = 8; return map;
   }, [sign]);
   return <mesh position-y={0.001} rotation-x={-Math.PI / 2}>
-    <planeGeometry args={[0.9, 0.075]} /><meshStandardMaterial color="#686051" map={texture ?? undefined}
+      <planeGeometry args={[1.12, 0.105]} /><meshStandardMaterial color="#686051" map={texture ?? undefined}
       transparent depthWrite={false} roughness={0.85} polygonOffset polygonOffsetFactor={-1} />
   </mesh>;
 }
@@ -215,6 +268,12 @@ function useGroundTexture(): CanvasTexture | null {
     const ctx = canvas.getContext('2d'); if (!ctx) return null;
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 2048, 2048);
     ctx.translate(1024, 1024); ctx.strokeStyle = '#fff'; ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    planContour(SUBSTRATE_PLAN).forEach(([x,z],i) => {
+      if (i === 0) ctx.moveTo(x / CHIP.size * 2048, z / CHIP.size * 2048);
+      else ctx.lineTo(x / CHIP.size * 2048, z / CHIP.size * 2048);
+    });
+    ctx.closePath(); ctx.clip();
     for (let side = 0; side < 4; side++) {
       ctx.save(); ctx.rotate(side * Math.PI / 2);
       for (let i = 0; i < 64; i++) {
@@ -222,9 +281,9 @@ function useGroundTexture(): CanvasTexture | null {
         ctx.fillRect(x - 4.5, 936, 9, 38);
         ctx.fillRect(x - 3, 904, 6, 14);
         // Parallel launch, 45-degree shoulder, then a tapered inner fan.
-        const shoulder = 760 - Math.abs(t) * 200;
-        const innerX = t * 910, innerY = 405 + Math.abs(t) * 90;
-        ctx.lineWidth = i % 8 === 0 ? 2.5 : 1.7;
+        const shoulder = 825 - Math.abs(t) * 120;
+        const innerX = t * 1280, innerY = 570 + Math.abs(t) * 110;
+        ctx.lineWidth = i % 8 === 0 ? 2.2 : 1.4;
         ctx.beginPath(); ctx.moveTo(x, 931); ctx.lineTo(x, shoulder);
         ctx.lineTo(innerX, innerY); ctx.lineTo(innerX, innerY - 32); ctx.stroke();
       }
@@ -251,6 +310,8 @@ export interface PartProps {
   /** Explode guides are drawn only in the main scene. */
   guides?: boolean;
   color?: string;
+  /** Physically distinct finish for this component; fixed attachments retain their materials. */
+  material?: MaterialProfile;
 }
 
 function PartGroup({
@@ -277,6 +338,7 @@ function PartGroup({
     <>
       <group
         position-y={y}
+        scale={isDiePart(id) ? [DIE_SCALE, 1, DIE_SCALE] : [1, 1, 1]}
         onClick={(event: ThreeEvent<MouseEvent>) => {
           if (!onSelect || event.delta > 4) return;
           event.stopPropagation();
@@ -413,7 +475,7 @@ function PackageInserts() {
           new Vector3(x, PLATE.top + 0.0018, 0.29 - 0.225),
           new Vector3(x, PLATE.top + 0.0018, 0.035 - i * 0.008),
           new Vector3(x - 0.014, PLATE.top + 0.0018, 0.016 - i * 0.008),
-          new Vector3(0.626, PLATE.top + 0.0018, 0.016 - i * 0.008),
+          new Vector3(PLATE.window / 2 + 0.070, PLATE.top + 0.0018, 0.016 - i * 0.008),
         ]);
         const trace = new TubeGeometry(curve, 20, 0.0013, 5, false);
         if (sign < 0) trace.rotateY(Math.PI);
@@ -449,7 +511,7 @@ function PackageInserts() {
           <meshPhysicalMaterial color={sign > 0 ? '#285e62' : '#474f53'} metalness={0.18} roughness={0.58} />
         </RoundedBox>
         <RoundedBox args={[0.122, 0.012, sign > 0 ? 0.164 : 0.132]} position-y={0.033} radius={0.003} smoothness={3} castShadow receiveShadow>
-          <Material kind={sign > 0 ? 'goldDeep' : 'silver'} selected={false} />
+          <Material kind={sign > 0 ? 'goldDeep' : 'silver'} selected={false} fixed />
         </RoundedBox>
       </group>
     </group>)}
@@ -465,7 +527,7 @@ function LidDetails() {
     const pieces = [];
     for (let side = 0; side < 4; side++) for (let i = 0; i < 46; i++) {
       const pad = new BoxGeometry(0.009, 0.002, 0.043);
-      pad.translate((-0.47 + i * 0.94 / 45) * 1.05, PLATE.top + 0.001, PLATE.window / 2 + 0.040);
+      pad.translate((-0.47 + i * 0.94 / 45) * 1.05 * DIE_SCALE, PLATE.top + 0.001, PLATE.window / 2 + 0.040);
       pad.rotateY(side * Math.PI / 2); pieces.push(pad);
     }
     const geometry = mergeGeometries(pieces); pieces.forEach(g => g.dispose()); return geometry;
@@ -477,8 +539,12 @@ function LidDetails() {
     ctx.beginPath(); ctx.roundRect(342,342,1364,1364,65); ctx.stroke();
     ctx.strokeStyle = '#b8b6ac'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(345,345,1358,1358,63); ctx.stroke();
     ctx.fillStyle = '#42443d'; ctx.font = '15px monospace';
-    ctx.save(); ctx.translate(230,1090); ctx.rotate(-Math.PI/2); ctx.fillText('SHIELD 01   /   Al 6061   /   QS',0,0); ctx.restore();
+    ctx.save(); ctx.translate(230,1090); ctx.rotate(-Math.PI/2); ctx.fillText('SHIELD 01   /   QS–01',0,0); ctx.restore();
     ctx.save(); ctx.translate(1805,770); ctx.rotate(Math.PI/2); ctx.fillText('CRYOGENIC PACKAGE   •   ILLUSTRATIVE',0,0); ctx.restore();
+    ctx.save(); ctx.textAlign = 'center'; ctx.fillStyle = '#3d4543';
+    ctx.font = '32px sans-serif'; ctx.fillText('QUBIT STUDIO', 1024, 1770);
+    ctx.font = '17px monospace'; ctx.fillText('QS–01   /   TRANSMON', 1024, 1804);
+    ctx.restore();
     for (const x of [275,1773]) for (const y of [440,1608]) {
       ctx.fillRect(x-9,y,18,1.5); ctx.fillRect(x,y-9,1.5,18);
     }
@@ -486,7 +552,8 @@ function LidDetails() {
   }, []);
   return <>
     <mesh geometry={lands}><meshPhysicalMaterial color="#d4b373" roughness={0.3} metalness={1}/></mesh>
-    <mesh position-y={PLATE.top + 0.0003} rotation-x={-Math.PI/2}>
+    {/* Lettering spans the lid's aperture. Its transparent pixels must not intercept die picks. */}
+    <mesh position-y={PLATE.top + 0.0003} rotation-x={-Math.PI/2} raycast={() => null}>
       <planeGeometry args={[PLATE.size,PLATE.size]}/><meshStandardMaterial map={engraving} transparent depthWrite={false} roughness={0.65} polygonOffset polygonOffsetFactor={-1}/>
     </mesh>
   </>;
@@ -505,11 +572,16 @@ export function Board({ selected, hidden, explode, onSelect, guides }: Omit<Part
   }, []);
   return (
     <PartGroup id="board" explodeY={BOARD.explodeY} explode={explode} hidden={hidden} onSelect={onSelect} guides={guides}>
-      <mesh castShadow receiveShadow position-y={BOARD.top - BOARD.thickness / 2}>
-        <boxGeometry args={[BOARD.size, BOARD.thickness, BOARD.size]} />
-        <Material kind="teal" selected={selected} />
+      <RoundedBox args={[BOARD.size, BOARD.thickness, BOARD.size]} position-y={BOARD.top - BOARD.thickness / 2}
+        radius={0.006} smoothness={4} castShadow receiveShadow>
+        <Material kind="laminate" selected={selected} />
         {selected && <Edges color={ACCENT} lineWidth={1.2} />}
-      </mesh>
+      </RoundedBox>
+      <BoardEdges />
+      <BoardBackside />
+      <RoundedBox args={[0.89, 0.001, 0.89]} position-y={BOARD.top + 0.0002} radius={0.0004} smoothness={3} receiveShadow>
+        <Material kind="goldDeep" selected={false} fixed />
+      </RoundedBox>
       <BoardContacts />
       <mesh geometry={pads} receiveShadow><meshPhysicalMaterial {...MAT.goldDeep} /></mesh>
       <BoardHardware />
@@ -523,12 +595,12 @@ function BoardArtwork() {
   const texture = useMemo(() => {
     const canvas = document.createElement('canvas'); canvas.width = canvas.height = 2048;
     const ctx = canvas.getContext('2d'); if (!ctx) return null;
-    ctx.fillStyle = '#103b46'; ctx.fillRect(0, 0, 2048, 2048); ctx.translate(1024, 1024);
+    ctx.clearRect(0, 0, 2048, 2048); ctx.translate(1024, 1024);
     for (let side = 0; side < 4; side++) {
       ctx.save(); ctx.rotate(side * Math.PI / 2);
       for (let i = 0; i < 72; i++) {
         const x = -850 + i * 1700 / 71, inner = x * 0.57;
-        ctx.strokeStyle = i % 5 === 0 ? '#476455' : '#27505a'; ctx.lineWidth = 2.4;
+        ctx.strokeStyle = i % 5 === 0 ? 'rgba(182,139,91,0.65)' : 'rgba(167,125,91,0.32)'; ctx.lineWidth = 2.0;
         ctx.beginPath(); ctx.moveTo(x, 972); ctx.lineTo(x, 805 - Math.abs(x) * 0.16);
         ctx.lineTo(inner, 530); ctx.lineTo(inner, 450); ctx.stroke();
         ctx.fillStyle = '#b39c60'; ctx.fillRect(x - 3, 935, 6, 20);
@@ -556,10 +628,73 @@ function BoardArtwork() {
   }, []);
   return <>
     <mesh position-y={BOARD.top + 0.0006} rotation-x={-Math.PI / 2} receiveShadow>
-      <planeGeometry args={[BOARD.size,BOARD.size]} /><meshPhysicalMaterial map={texture} roughness={0.56} metalness={0.1} />
+      <planeGeometry args={[BOARD.size,BOARD.size]} /><meshPhysicalMaterial map={texture} transparent depthWrite={false} roughness={0.43} metalness={0.48} />
     </mesh>
     <mesh geometry={components.body} castShadow><meshPhysicalMaterial color="#292c29" roughness={0.6} /></mesh>
     <mesh geometry={components.terminal}><meshPhysicalMaterial color="#aab0b2" metalness={0.95} roughness={0.25} /></mesh>
+  </>;
+}
+
+/** The carrier is visible as a complete object when exploded: routed underside and cut laminate. */
+function BoardEdges() {
+  const profile = useContext(PartMaterial);
+  const texture = useMemo(() => {
+    const canvas = document.createElement('canvas'); canvas.width = 2048; canvas.height = 128;
+    const ctx = canvas.getContext('2d'); if (!ctx) return null;
+    ctx.clearRect(0, 0, 2048, 128);
+    for (let row = 8; row < 128; row += 15) {
+      ctx.fillStyle = 'rgba(204,166,118,0.40)'; ctx.fillRect(0, row, 2048, 2);
+      ctx.fillStyle = 'rgba(45,22,24,0.5)'; ctx.fillRect(0, row + 3, 2048, 3);
+      for (let col = 0; col < 2048; col += 9) {
+        ctx.fillStyle = 'rgba(223,192,155,0.28)'; ctx.fillRect(col, row + 8, 5, 2);
+      }
+    }
+    const map = new CanvasTexture(canvas); map.colorSpace = SRGBColorSpace; map.anisotropy = 16; return map;
+  }, []);
+  useEffect(() => () => texture?.dispose(), [texture]);
+  if (profile?.id !== 'laminate') return null;
+  return <>{[0, 1, 2, 3].map(side => <group key={side} rotation-y={side * Math.PI / 2}>
+    <mesh position={[0, BOARD.top - BOARD.thickness / 2, BOARD.size / 2 + 0.00015]} receiveShadow>
+      <planeGeometry args={[BOARD.size - 0.016, BOARD.thickness - 0.012]} />
+      <meshPhysicalMaterial map={texture} transparent depthWrite={false} roughness={0.82} />
+    </mesh>
+  </group>)}</>;
+}
+
+function BoardBackside() {
+  const artwork = useMemo(() => {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 2048;
+    const ctx = canvas.getContext('2d'); if (!ctx) return null;
+    ctx.clearRect(0, 0, 2048, 2048); ctx.translate(1024, 1024);
+    // Via stitching follows a perimeter ground return; launch traces clear the central die seat.
+    for (let side = 0; side < 4; side++) {
+      ctx.save(); ctx.rotate(side * Math.PI / 2);
+      for (let i = 0; i < 50; i++) {
+        const x = -850 + i * 1700 / 49;
+        ctx.strokeStyle = 'rgba(201,157,97,0.5)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, 982); ctx.lineTo(x, 820 - Math.abs(x) * 0.1);
+        ctx.lineTo(x * 0.52, 540); ctx.lineTo(x * 0.52, 480); ctx.stroke();
+        ctx.fillStyle = '#ae9868'; ctx.beginPath(); ctx.arc(x, 904, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#261f1c'; ctx.beginPath(); ctx.arc(x, 904, 1.7, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.strokeStyle = '#bba97e'; ctx.lineWidth = 2; ctx.strokeRect(-925, 932, 1850, 50);
+      ctx.restore();
+    }
+    ctx.strokeStyle = '#baae90'; ctx.lineWidth = 1.8;
+    ctx.strokeRect(-457, -457, 914, 914); ctx.strokeRect(-446, -446, 892, 892);
+    ctx.fillStyle = '#ccc1a0'; ctx.font = '24px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('CARRIER   /   BACK', 0, 570); ctx.font = '16px monospace'; ctx.fillText('QS–01   ·   RF / DC', 0, 600);
+    const map = new CanvasTexture(canvas); map.colorSpace = SRGBColorSpace; map.anisotropy = 16; return map;
+  }, []);
+  useEffect(() => () => artwork?.dispose(), [artwork]);
+  return <>
+    <mesh rotation-x={Math.PI / 2} position-y={BOARD.top - BOARD.thickness - 0.0003} receiveShadow>
+      <planeGeometry args={[BOARD.size - 0.012, BOARD.size - 0.012]} />
+      <meshPhysicalMaterial map={artwork} transparent depthWrite={false} metalness={0.5} roughness={0.46} />
+    </mesh>
+    <RoundedBox args={[0.78, 0.002, 0.78]} position-y={BOARD.top - BOARD.thickness - 0.0008} radius={0.0008} smoothness={3} receiveShadow>
+      <Material kind="goldDeep" selected={false} fixed surface="back" />
+    </RoundedBox>
   </>;
 }
 
@@ -588,17 +723,56 @@ function planGeometry(path:string,depth:number,mirror=false,bevel=0) {
   const shape=new Shape();
   planContour(path).forEach(([x,z],i)=>{const y=mirror?z:-z;if(i===0)shape.moveTo(x,y);else shape.lineTo(x,y);});
   shape.closePath();
-  return new ExtrudeGeometry(shape,{depth,bevelEnabled:bevel>0,bevelSize:bevel,bevelThickness:bevel,bevelSegments:3});
+  const geometry = new ExtrudeGeometry(shape,{depth,bevelEnabled:bevel>0,bevelSize:bevel,bevelThickness:bevel,bevelSegments:3});
+  // The caps share die-space UVs; sidewalls use their own depth axis.
+  extrusionUVs(geometry, CHIP.size, CHIP.size, depth + 2 * bevel, -bevel);
+  return geometry;
 }
 
 export function Substrate({ selected, hidden, explode, onSelect, guides }: Omit<PartProps, 'id'>) {
-  const geometry=useMemo(()=>planGeometry(SUBSTRATE_PLAN,CHIP.thickness,false,0.0012),[]);
+  const geometry = useMemo(() => planGeometry(SUBSTRATE_PLAN, CHIP.thickness, false, 0.0012), []);
+  const backside = useMemo(() => planGeometry(SUBSTRATE_PLAN, 0.0003, true, 0), []);
+  const edgeTexture = useMemo(() => {
+    const canvas = document.createElement('canvas'); canvas.width = 2048; canvas.height = 128;
+    const ctx = canvas.getContext('2d'); if (!ctx) return null;
+    ctx.fillStyle = '#ddd'; ctx.fillRect(0, 0, 2048, 128);
+    // Dicing leaves transverse saw marks; the polished wafer face remains smooth.
+    for (let x = 0; x < 2048; x += 2) {
+      const gray = Math.round(125 + 65 * Math.abs(Math.sin(x * 1.31)));
+      ctx.fillStyle = `rgb(${gray},${gray},${gray})`; ctx.fillRect(x, 0, 1, 128);
+    }
+    const map = new CanvasTexture(canvas); map.anisotropy = 16; return map;
+  }, []);
+  const profile = useContext(PartMaterial);
+  const tint = useContext(PartColor);
+  const edges = useMemo(() => {
+    const contour = planContour(SUBSTRATE_PLAN);
+    return contour.map(([x, z], i) => {
+      const next = contour[(i + 1) % contour.length], dx = next[0] - x, dz = next[1] - z;
+      const length = Math.hypot(dx, dz);
+      return { length, rotation: Math.atan2(dz, -dx), x: (x + next[0]) / 2 + dz / length * 0.00123,
+        z: (z + next[1]) / 2 - dx / length * 0.00123 };
+    });
+  }, []);
+  useEffect(() => () => edgeTexture?.dispose(), [edgeTexture]);
   return (
     <PartGroup id="substrate" explodeY={CHIP.explodeY} explode={explode} hidden={hidden} onSelect={onSelect} guides={guides}>
-      <mesh geometry={geometry} rotation-x={-Math.PI/2} castShadow receiveShadow position-y={-CHIP.thickness}>
-        <Material kind="chip" selected={selected} />
+      <mesh geometry={geometry} rotation-x={-Math.PI / 2} castShadow receiveShadow position-y={-CHIP.thickness}>
+        <Material kind="chip" selected={selected} attach="material-0" />
+        <Material kind="chip" selected={selected} surface="edge" attach="material-1" />
         {selected && <Edges color={ACCENT} lineWidth={1.2} />}
       </mesh>
+      <mesh geometry={backside} rotation-x={Math.PI / 2} position-y={-CHIP.thickness - 0.00125} receiveShadow>
+        <Material kind="chip" selected={selected} surface="back" />
+      </mesh>
+      {edges.map((edge, i) => <group key={i}>
+        <mesh position={[edge.x, -CHIP.thickness / 2, edge.z]} rotation-y={edge.rotation} receiveShadow>
+          <planeGeometry args={[edge.length - 0.004, CHIP.thickness - 0.006]} />
+          <meshPhysicalMaterial color={tint ?? profile?.color ?? MAT.chip.color} roughness={0.58}
+            metalness={profile?.metalness ?? 0.3} bumpMap={edgeTexture} bumpScale={0.00028}
+            roughnessMap={edgeTexture} clearcoat={0.05} />
+        </mesh>
+      </group>)}
     </PartGroup>
   );
 }
@@ -610,10 +784,10 @@ function BondWires() {
       const t = -0.47 + i * 0.94 / 45;
       const curve = new CatmullRomCurve3([
         new Vector3(t, 0.008, CHIP.size / 2 - 0.022),
-        new Vector3(t * 1.015, 0.081 + (i % 3) * 0.003, CHIP.size / 2 + 0.026),
-        new Vector3(t * 1.05, PLATE.top + 0.003, PLATE.window / 2 + 0.028),
+        new Vector3(t * 1.015, 0.051 + Math.sin(i * 1.7 + side) * 0.003, CHIP.size / 2 + 0.026),
+        new Vector3(t * 1.05, PLATE.top + 0.003, (PLATE.window / 2 + 0.028) / DIE_SCALE),
       ]);
-      const wire = new TubeGeometry(curve, 12, 0.0021, 6, false);
+      const wire = new TubeGeometry(curve, 26, 0.00115, 8, false);
       wire.rotateY(side * Math.PI / 2); wires.push(wire);
     }
     const merged = mergeGeometries(wires); wires.forEach(g => g.dispose()); return merged;
@@ -625,18 +799,18 @@ function BondWires() {
       // Flattened bonds are illustrative attachment detail, not electrical geometry.
       for (const [x, y, z] of [
         [t, 0.005, CHIP.size / 2 - 0.022],
-        [t * 1.05, PLATE.top + 0.003, PLATE.window / 2 + 0.028],
+        [t * 1.05, PLATE.top + 0.003, (PLATE.window / 2 + 0.028) / DIE_SCALE],
       ]) {
         const foot = new SphereGeometry(1, 8, 6);
-        foot.scale(0.0045, 0.003, 0.008);
+        foot.scale(0.0032, 0.0015, 0.0062);
         foot.translate(x, y, z); foot.rotateY(side * Math.PI / 2); pieces.push(foot);
       }
     }
     const merged = mergeGeometries(pieces); pieces.forEach(g => g.dispose()); return merged;
   }, []);
   return <>
-    <mesh geometry={geometry} castShadow><meshPhysicalMaterial color="#ddbd83" metalness={1} roughness={0.40} /></mesh>
-    <mesh geometry={feet} receiveShadow><meshPhysicalMaterial color="#d6b77a" metalness={1} roughness={0.46} /></mesh>
+    <mesh geometry={geometry} castShadow><meshPhysicalMaterial color="#d7b579" metalness={1} roughness={0.24} /></mesh>
+    <mesh geometry={feet} receiveShadow><meshPhysicalMaterial color="#d6b77a" metalness={1} roughness={0.31} /></mesh>
   </>;
 }
 
@@ -653,26 +827,43 @@ function BoardContacts() {
   return <mesh geometry={geometry}><meshPhysicalMaterial {...MAT.gold} /></mesh>;
 }
 
+/** Thin-film perforation detail, with an unbroken border around the shared circuit outline.
+ * This is appearance only: the model and planar circuit geometry remain unchanged. */
+function useGroundPerforations() {
+  const texture = useMemo(() => {
+    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 2048;
+    const ctx = canvas.getContext('2d'); if (!ctx) return null;
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 2048, 2048);
+    ctx.fillStyle = '#000';
+    for (let y = 150; y < 1898; y += 24) for (let x = 150; x < 1898; x += 24) {
+      ctx.fillRect(x, y, 5, 5);
+    }
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 22; ctx.lineJoin = 'round';
+    for (const sign of [-1, 1]) {
+      ctx.beginPath();
+      planContour(TOP_GROUND_PLAN).forEach(([x,z],i) => {
+        const px = (x / CHIP.size + 0.5) * 2048, py = (sign * z / CHIP.size + 0.5) * 2048;
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.closePath(); ctx.stroke();
+    }
+    const map = new CanvasTexture(canvas); map.anisotropy = 16; return map;
+  }, []);
+  useEffect(() => () => texture?.dispose(), [texture]);
+  return texture;
+}
+
 export function Ground({ selected, hidden, explode, onSelect, guides }: Omit<PartProps, 'id'>) {
   const texture = useGroundTexture();
-  const regions=useMemo(()=>[planGeometry(TOP_GROUND_PLAN,.002),planGeometry(TOP_GROUND_PLAN,.002,true)],[]);
-  const color = useContext(PartColor);
+  const perforations = useGroundPerforations();
+  const regions=useMemo(()=>[planGeometry(TOP_GROUND_PLAN,.002,false,0.00015),planGeometry(TOP_GROUND_PLAN,.002,true,0.00015)],[]);
   return (
     <PartGroup id="ground" explodeY={GROUND.explodeY} explode={explode} hidden={hidden} onSelect={onSelect} guides={guides}>
       <BondWires />
-      {regions.map((geometry,i)=><mesh key={i} geometry={geometry} rotation-x={-Math.PI/2} position-y={.002} receiveShadow><Material kind="graphite" selected={selected}/>{selected&&<Edges color={ACCENT} lineWidth={1.2}/>}</mesh>)}
-      <mesh rotation-x={-Math.PI / 2} position-y={0.0015} receiveShadow>
+      {regions.map((geometry,i)=><mesh key={i} geometry={geometry} rotation-x={-Math.PI/2} position-y={.002} receiveShadow><Material kind="ground" selected={selected} alphaMap={perforations}/>{selected&&<Edges color={ACCENT} lineWidth={1.2}/>}</mesh>)}
+      <mesh rotation-x={-Math.PI / 2} position-y={0.0044} receiveShadow raycast={() => null}>
         <planeGeometry args={[GROUND.size, GROUND.size]} />
-        <meshPhysicalMaterial
-          color={color ?? "#c9ae6b"}
-          alphaMap={texture ?? undefined}
-          transparent
-          alphaTest={0.08}
-          metalness={0.96}
-          roughness={0.32}
-          emissive={selected ? ACCENT : '#000000'}
-          emissiveIntensity={selected ? 0.1 : 0}
-        />
+        <Material kind="ground" selected={selected} alphaMap={texture} />
       </mesh>
     </PartGroup>
   );
@@ -697,14 +888,14 @@ export function Junction({ selected, hidden, explode, onSelect, guides }: Omit<P
   const electrode = useMemo(() => electrodeGeometry(), []);
   return (
     <PartGroup id="junction" explodeY={JUNCTION.explodeY} explode={explode} hidden={hidden} onSelect={onSelect} guides={guides}>
-      {/* two overlapping electrodes with the thin barrier reading as a gold seam */}
+      {/* Two metal electrodes separated by a fixed aluminium-oxide tunnel barrier. */}
       <mesh geometry={electrode} rotation-x={-Math.PI / 2} position={[0, 0.009, 0]} castShadow>
         <Material kind="silver" selected={selected} />
         {selected && <Edges color={ACCENT} lineWidth={1.2} />}
       </mesh>
       <mesh position={[0, 0.0145, 0.002]}>
         <boxGeometry args={[0.024, 0.0014, 0.022]} />
-        <Material kind="gold" selected={selected} />
+        <meshPhysicalMaterial color="#b9b5cb" metalness={0} roughness={0.46} clearcoat={0.16} />
       </mesh>
       <mesh geometry={electrode} rotation={[-Math.PI / 2, 0, Math.PI]} position={[0, 0.016, 0.003]} castShadow>
         <Material kind="silver" selected={selected} />
@@ -720,7 +911,7 @@ export function Junction({ selected, hidden, explode, onSelect, guides }: Omit<P
 }
 
 export function Gate({ selected, hidden, explode, onSelect, guides }: Omit<PartProps, 'id'>) {
-  const geometry=useMemo(()=>planGeometry(GATE_PLAN,.008),[]);
+  const geometry=useMemo(()=>planGeometry(GATE_PLAN,.008,false,0.00045),[]);
   return <PartGroup id="gate" explodeY={GATE.explodeY} explode={explode} hidden={hidden} onSelect={onSelect} guides={guides}>
     <mesh geometry={geometry} rotation-x={-Math.PI/2} position-y={.002} castShadow><Material kind="gold" selected={selected}/>{selected&&<Edges color={ACCENT} lineWidth={1.2}/>}</mesh>
     <mesh position={[(GATE.from+GATE.to)/2,.02,0]} userData={{hit:true}}><boxGeometry args={[GATE.to-GATE.from+.04,.05,.10]}/><meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false}/></mesh>
@@ -742,5 +933,6 @@ export const PART_ORDER: PartId[] = ['package', 'board', 'substrate', 'ground', 
 /** One part's meshes; shared by the main scene and the inspector detail preview. */
 export function PartMeshes(props: PartProps) {
   const Builder = BUILDERS[props.id];
-  return <PartColor.Provider value={props.color}><Builder {...props} /></PartColor.Provider>;
+  const material = props.material ?? resolveMaterial(DEFAULT_COMPONENT_MATERIALS[props.id]);
+  return <PartMaterial.Provider value={material}><PartColor.Provider value={props.color}><Builder {...props} /></PartColor.Provider></PartMaterial.Provider>;
 }

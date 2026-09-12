@@ -1,12 +1,15 @@
 import { MATERIAL_CATALOG } from './material-records.ts';
 import { clampParam } from './params.ts';
 import type { DesignGoals, DeviceParams } from './types.ts';
+import type { ComponentMaterials } from './component-materials.ts';
+import { parseComponentMaterials } from './component-material-selection.ts';
 
 export interface ShareableDesign {
   params: DeviceParams;
   goals: DesignGoals;
   topMaterial: string;
   baseMaterial: string;
+  componentMaterials?: ComponentMaterials;
 }
 
 const GOAL_BOUNDS: Record<keyof DesignGoals, [number, number]> = {
@@ -44,6 +47,7 @@ export function createDesignShareUrl(design: ShareableDesign, pageUrl: string): 
   url.searchParams.set('charge', String(design.goals.max_dispersion_khz));
   url.searchParams.set('top', design.topMaterial);
   url.searchParams.set('base', design.baseMaterial);
+  if (design.componentMaterials) url.searchParams.set('component_materials', JSON.stringify(design.componentMaterials));
   return url.toString();
 }
 
@@ -65,6 +69,16 @@ export function parseDesignShareUrl(pageUrl: string): ShareableDesign | null {
   if (!topMaterial || !baseMaterial) return null;
   if (!MATERIAL_CATALOG.includes(topMaterial as (typeof MATERIAL_CATALOG)[number])) return null;
   if (!MATERIAL_CATALOG.includes(baseMaterial as (typeof MATERIAL_CATALOG)[number])) return null;
+  const rawComponents = url.searchParams.get('component_materials');
+  let componentMaterials: ComponentMaterials | undefined;
+  if (rawComponents !== null) {
+    if (rawComponents.length > 512) return null;
+    try {
+      const parsed = parseComponentMaterials(JSON.parse(rawComponents));
+      if (!parsed) return null;
+      componentMaterials = parsed;
+    } catch { return null; }
+  }
 
   return {
     params: {
@@ -81,5 +95,6 @@ export function parseDesignShareUrl(pageUrl: string): ShareableDesign | null {
     },
     topMaterial,
     baseMaterial,
+    ...(componentMaterials ? { componentMaterials } : {}),
   };
 }
