@@ -1,17 +1,21 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import AskLlm from '@/components/AskLlm';
 import Inspector from '@/components/Inspector';
 import PartsTree from '@/components/PartsTree';
 import ResultsDock from '@/components/ResultsDock';
 import Schematic from '@/components/Schematic';
 import type { ViewportHandle } from '@/components/Viewport3D';
+import { topicFromPart, type TopicId } from '@/lib/explain-topics';
+import { buildChipSnapshot } from '@/lib/insight-snapshot';
 import { DEFAULT_PARAMS, clampParam, sameParams } from '@/lib/params';
 import type { ParamKey } from '@/lib/params';
 import { PART_BY_ID } from '@/lib/parts';
 import type { PartId } from '@/lib/parts';
 import { useEvaluate } from '@/lib/useEvaluate';
+import { useExplain } from '@/lib/useExplain';
 import type { DesignGoals, DeviceParams, DeviceResult } from '@/lib/types';
 import { materialColor, materialPartColors } from '@/lib/material-colors';
 import type { MaterialAppearance } from '@/lib/material-colors';
@@ -52,10 +56,32 @@ export default function Page() {
     topColor: materialColor('Al'),
     baseColor: materialColor('Si'),
   });
+
+  // AI feature state
+  const [selectedTopics, setSelectedTopics] = useState<Set<TopicId>>(new Set());
+  const [llmOpen, setLlmOpen] = useState(false);
+
   const viewportRef = useRef<ViewportHandle | null>(null);
 
   const evaluation = useEvaluate(params);
   const { result, error, stale, status, retry } = evaluation;
+
+  // Build a compact snapshot for the LLM
+  const snapshot = useMemo(
+    () =>
+      buildChipSnapshot({
+        params,
+        result,
+        baseline,
+        selected,
+        stale,
+        error,
+      }),
+    [params, result, baseline, selected, stale, error],
+  );
+
+  const topicsArray = useMemo(() => Array.from(selectedTopics), [selectedTopics]);
+  const explain = useExplain(snapshot, topicsArray);
 
   const changeParam = useCallback((key: ParamKey, value: number) => {
     setParams((current) => ({ ...current, [key]: clampParam(key, value) }));
@@ -80,8 +106,34 @@ export default function Page() {
 
   const currentMaterialColors = materialPartColors(materials);
 
+  const onSelectTopic = useCallback((id: TopicId) => {
+    setSelectedTopics((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }, []);
+
+  const clearTopics = useCallback(() => {
+    setSelectedTopics(new Set());
+  }, []);
+
+  const triggerAskLlm = useCallback(() => {
+    if (selectedTopics.size === 0) return;
+    setLlmOpen(true);
+  }, [selectedTopics.size]);
+
   const selectPart = useCallback((id: PartId) => {
     setSelected(id);
+    // Auto-add the part's associated topic to the selection
+    const next = topicFromPart(id);
+    if (next) {
+      setSelectedTopics((current) => new Set(current).add(next));
+    }
     setHintOpen(false);
   }, []);
 
@@ -286,6 +338,10 @@ export default function Page() {
           onGoalsChange={setGoals}
           onMaterialsChange={changeMaterials}
           materials={materials}
+          selectedTopics={selectedTopics}
+          onSelectTopic={onSelectTopic}
+          onClearTopics={clearTopics}
+          onAskLlm={triggerAskLlm}
         />
       </aside>
 
@@ -300,8 +356,19 @@ export default function Page() {
           onClearBaseline={() => setBaseline(null)}
           onRetry={retry}
           goals={goals}
+          selectedTopics={selectedTopics}
+          onSelectTopic={onSelectTopic}
         />
       </section>
+
+      {/* AI explanation dialog */}
+      <AskLlm
+        open={llmOpen}
+        onOpenChange={setLlmOpen}
+        topics={topicsArray}
+        snapshot={snapshot}
+        explain={explain}
+      />
     </div>
   );
 }

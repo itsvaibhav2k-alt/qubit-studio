@@ -1,6 +1,7 @@
 'use client';
 
 import { DASH, delta, dispersionDisplay, num, paramSummary, signed } from '@/lib/format';
+import type { TopicId } from '@/lib/explain-topics';
 import type { ChargePoint, DesignGoals, DeviceResult } from '@/lib/types';
 
 interface ResultsDockProps {
@@ -13,27 +14,38 @@ interface ResultsDockProps {
   onClearBaseline: () => void;
   onRetry: () => void;
   goals: DesignGoals;
+  selectedTopics: Set<TopicId>;
+  onSelectTopic: (id: TopicId) => void;
 }
 
 interface MetricProps {
+  topicId: TopicId;
+  selected: boolean;
   label: string;
   symbol?: string;
   value: string;
   muted?: boolean;
   note?: string;
   deltaText?: { text: string; tone: 'up' | 'down' | 'flat' } | null;
+  onSelectTopic: (id: TopicId) => void;
 }
 
-function Metric({ label, symbol, value, muted, note, deltaText }: MetricProps) {
+function Metric({ topicId, selected, label, symbol, value, muted, note, deltaText, onSelectTopic }: MetricProps) {
   return (
-    <div className="metric">
+    <button
+      type="button"
+      className={`metric${selected ? ' on' : ''}`}
+      aria-pressed={selected}
+      title={selected ? 'Selected for AI analysis — click to deselect' : 'Click to select for AI analysis'}
+      onClick={() => onSelectTopic(topicId)}
+    >
       <div className="k">
         {label} {symbol && <span className="sym">{symbol}</span>}
       </div>
       <div className={`v${muted ? ' none' : ''}`}>{value}</div>
       {deltaText && <div className={`d ${deltaText.tone}`}>{deltaText.text}</div>}
       {note && <div className="note">{note}</div>}
-    </div>
+    </button>
   );
 }
 
@@ -149,6 +161,8 @@ export default function ResultsDock({
   onClearBaseline,
   onRetry,
   goals,
+  selectedTopics,
+  onSelectTopic,
 }: ResultsDockProps) {
   const dispersion = dispersionDisplay(result);
   const baselineDispersion = baseline ? dispersionDisplay(baseline) : null;
@@ -207,10 +221,13 @@ export default function ResultsDock({
 
       <div className="result-intro">
         <span className="eyebrow">At a glance</span>
-        <span>These are the three results that matter most for this demo.</span>
+        <span>Click a metric to queue it for Ask AI.</span>
       </div>
       <div className="dock-grid summary-grid">
         <Metric
+          topicId="f01"
+          selected={selectedTopics.has('f01')}
+          onSelectTopic={onSelectTopic}
           label="Operating frequency"
           value={result ? `${num(result.f01_ghz, 3)} GHz` : DASH}
           muted={!result}
@@ -218,6 +235,9 @@ export default function ResultsDock({
           deltaText={delta(result?.f01_ghz, baseline?.f01_ghz, 4, 'GHz')}
         />
         <Metric
+          topicId="alpha"
+          selected={selectedTopics.has('alpha')}
+          onSelectTopic={onSelectTopic}
           label="Level separation"
           value={result ? `${num(result.anharmonicity_mhz, 1)} MHz` : DASH}
           muted={!result}
@@ -225,6 +245,9 @@ export default function ResultsDock({
           deltaText={delta(result?.anharmonicity_mhz, baseline?.anharmonicity_mhz, 1, 'MHz')}
         />
         <Metric
+          topicId="dispersion"
+          selected={selectedTopics.has('dispersion')}
+          onSelectTopic={onSelectTopic}
           label="Charge sensitivity"
           value={dispersion.text}
           muted={!result || !dispersion.resolved}
@@ -246,22 +269,32 @@ export default function ResultsDock({
           <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>Clear</button>
         </div>
         <div className="dock-grid technical-grid">
-          <Metric label="EJ / EC ratio" value={result ? num(result.ratio, 1) : DASH} muted={!result} deltaText={delta(result?.ratio, baseline?.ratio, 1, '')} />
-          <Metric label="Signed anharmonicity" symbol="α = f12 − f01" value={result ? `${signed(result.alpha_mhz, 1)} MHz` : DASH} muted={!result} deltaText={delta(result?.alpha_mhz, baseline?.alpha_mhz, 1, 'MHz')} />
-          <Metric label="Critical current" symbol="derived from EJ" value={result?.critical_current_na !== undefined ? `${num(result.critical_current_na, 2)} nA` : DASH} muted={result?.critical_current_na === undefined} />
-          <Metric label="Total capacitance" symbol="derived from EC" value={result?.total_capacitance_ff !== undefined ? `${num(result.total_capacitance_ff, 2)} fF` : DASH} muted={result?.total_capacitance_ff === undefined} />
+          <Metric topicId="ratio" selected={selectedTopics.has('ratio')} onSelectTopic={onSelectTopic} label="EJ / EC ratio" value={result ? num(result.ratio, 1) : DASH} muted={!result} deltaText={delta(result?.ratio, baseline?.ratio, 1, '')} />
+          <Metric topicId="alpha" selected={selectedTopics.has('alpha')} onSelectTopic={onSelectTopic} label="Signed anharmonicity" symbol="α = f12 − f01" value={result ? `${signed(result.alpha_mhz, 1)} MHz` : DASH} muted={!result} deltaText={delta(result?.alpha_mhz, baseline?.alpha_mhz, 1, 'MHz')} />
+          <Metric topicId="junction" selected={selectedTopics.has('junction')} onSelectTopic={onSelectTopic} label="Critical current" symbol="derived from EJ" value={result?.critical_current_na !== undefined ? `${num(result.critical_current_na, 2)} nA` : DASH} muted={result?.critical_current_na === undefined} />
+          <Metric topicId="capacitor" selected={selectedTopics.has('capacitor')} onSelectTopic={onSelectTopic} label="Total capacitance" symbol="derived from EC" value={result?.total_capacitance_ff !== undefined ? `${num(result.total_capacitance_ff, 2)} fF` : DASH} muted={result?.total_capacitance_ff === undefined} />
         </div>
         <div className="dock-lower">
-          <div className="chart">
+          <button
+            type="button"
+            className={`chart${selectedTopics.has('levels') ? ' on' : ''}`}
+            aria-pressed={selectedTopics.has('levels')}
+            onClick={() => onSelectTopic('levels')}
+          >
             <h4>Energy levels</h4>
             <p className="cap">Height shows energy relative to the ground state. Dashed lines show a saved baseline.</p>
             {result ? <EnergyLevels result={result} baseline={baseline} /> : <p className="empty">Waiting for a calculation…</p>}
-          </div>
-          <div className="chart">
+          </button>
+          <button
+            type="button"
+            className={`chart${selectedTopics.has('charge') ? ' on' : ''}`}
+            aria-pressed={selectedTopics.has('charge')}
+            onClick={() => onSelectTopic('charge')}
+          >
             <h4>Response to stray charge</h4>
             <p className="cap">A flatter line means the operating frequency is less sensitive to charge.</p>
             {result ? <ChargeResponse result={result} baseline={baseline} /> : <p className="empty">Waiting for a calculation…</p>}
-          </div>
+          </button>
         </div>
       </details>
 
