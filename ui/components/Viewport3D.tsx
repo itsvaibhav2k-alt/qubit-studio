@@ -89,6 +89,7 @@ function Framing({ region, explodeTarget, settled, assemblyRef, fitRef }: Framin
   const camera = useThree((state) => state.camera) as PerspectiveCamera;
   const size = useThree((state) => state.size);
   const controls = useThree((state) => state.controls) as OrbitControlsImpl | null;
+  const invalidate = useThree((state) => state.invalidate);
   // Once the user has orbited or zoomed, automatic refits only dolly OUT (never undo a zoom-out);
   // Reset view clears the flag and restores the reference framing.
   const userMovedRef = useRef(false);
@@ -152,10 +153,11 @@ function Framing({ region, explodeTarget, settled, assemblyRef, fitRef }: Framin
         }
       }
       controls?.update();
+      invalidate();
     };
     fitRef.current = fit;
     fit(false);
-  }, [size.width, size.height, region, explodeTarget, settled, camera, controls, fitRef, assemblyRef]);
+  }, [size.width, size.height, region, explodeTarget, settled, camera, controls, fitRef, assemblyRef, invalidate]);
 
   return null;
 }
@@ -205,18 +207,23 @@ function Projector({ selected, explodeRef, anchorRef, wrapperRef, assemblyRef }:
 /** Smooths the Assembled/Exploded target; re-renders only while the value is moving. */
 function useSmoothedExplode(target: number, explodeRef: React.RefObject<number>): number {
   const [value, setValue] = useState(target);
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => invalidate(), [target, invalidate]);
   useFrame((_, delta) => {
     const current = explodeRef.current;
     if (Math.abs(current - target) < 0.002) {
       if (current !== target) {
         explodeRef.current = target;
         setValue(target);
+        invalidate();
       }
       return;
     }
-    const next = MathUtils.damp(current, target, 7, delta);
+    // The first frame after an idle period can have a large delta.
+    const next = MathUtils.damp(current, target, 7, Math.min(delta, 0.1));
     explodeRef.current = next;
     setValue(next);
+    invalidate();
   });
   return value;
 }
@@ -327,7 +334,9 @@ export default function Viewport3D({
     <Canvas
       camera={{ position: DEFAULT_DIRECTION.clone().multiplyScalar(5).toArray(), fov: 30, near: 0.1, far: 60 }}
       dpr={renderQuality === 'high' ? [2, 2.5] : [1, 1.5]}
-      frameloop={active ? 'always' : 'never'}
+      // Keep the full-quality image while idle. Controls, edits and explode
+      // animation request frames; an unchanged chip does not consume the GPU.
+      frameloop={active ? 'demand' : 'never'}
       shadows={{ type: PCFShadowMap }}
       onPointerMissed={onClearSelection}
       gl={{
