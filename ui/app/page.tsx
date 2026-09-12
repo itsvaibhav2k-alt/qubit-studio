@@ -7,8 +7,11 @@ import GuidedTour from '@/components/GuidedTour';
 import Inspector from '@/components/Inspector';
 import PartsTree from '@/components/PartsTree';
 import ResultsDock from '@/components/ResultsDock';
+import RichMathText from '@/components/RichMathText';
 import Schematic from '@/components/Schematic';
 import type { ViewportHandle } from '@/components/Viewport3D';
+import { createDesignShareUrl, parseDesignShareUrl } from '@/lib/design-link';
+import { num } from '@/lib/format';
 import { topicFromPart, type TopicId } from '@/lib/explain-topics';
 import { TOUR_STEPS, type InspectorTab } from '@/lib/guided-tour';
 import { buildChipSnapshot } from '@/lib/insight-snapshot';
@@ -35,6 +38,17 @@ const DEFAULT_GOALS: DesignGoals = {
   min_anharmonicity_mhz: 200,
   max_dispersion_khz: 10,
 };
+
+interface DesignSnapshot {
+  id: string;
+  savedAt: string;
+  params: DeviceParams;
+  goals: DesignGoals;
+  topMaterial: string;
+  baseMaterial: string;
+}
+
+const HISTORY_KEY = 'qubit-studio-saved-designs-v2';
 
 const PRESETS: Record<string, DeviceParams> = {
   default: DEFAULT_PARAMS,
@@ -66,6 +80,8 @@ export default function Page() {
   const [guidedOpen, setGuidedOpen] = useState(false);
   const [guidedIndex, setGuidedIndex] = useState(0);
   const [inspectorTab, setInspectorTab] = useState<InspectorTab>('edit');
+  const [history, setHistory] = useState<DesignSnapshot[]>([]);
+  const [shareStatus, setShareStatus] = useState<string | null>(null);
 
   const viewportRef = useRef<ViewportHandle | null>(null);
 
@@ -99,6 +115,62 @@ export default function Page() {
   const changeParam = useCallback((key: ParamKey, value: number) => {
     setParams((current) => ({ ...current, [key]: clampParam(key, value) }));
   }, []);
+
+  const saveCurrentDesign = useCallback(() => {
+    const item: DesignSnapshot = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      savedAt: new Date().toISOString(),
+      params,
+      goals,
+      topMaterial: materials.topMaterial,
+      baseMaterial: materials.baseMaterial,
+    };
+    setHistory((current) => {
+      const signature = JSON.stringify({ ...item, id: '', savedAt: '' });
+      const next = [
+        item,
+        ...current.filter((entry) => JSON.stringify({ ...entry, id: '', savedAt: '' }) !== signature),
+      ].slice(0, 10);
+      window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+    setShareStatus('Design saved');
+    window.setTimeout(() => setShareStatus(null), 2000);
+  }, [goals, materials.baseMaterial, materials.topMaterial, params]);
+
+  const restoreSnapshot = useCallback((item: DesignSnapshot) => {
+    setParams(item.params);
+    setGoals(item.goals);
+    setMaterials({
+      topMaterial: item.topMaterial,
+      baseMaterial: item.baseMaterial,
+      topColor: materialColor(item.topMaterial),
+      baseColor: materialColor(item.baseMaterial),
+    });
+    setShareStatus('Saved design restored');
+    window.setTimeout(() => setShareStatus(null), 2000);
+  }, []);
+
+  const restoreLatestDesign = useCallback(() => {
+    if (history[0]) restoreSnapshot(history[0]);
+  }, [history, restoreSnapshot]);
+
+  const copyShareLink = useCallback(async () => {
+    const url = createDesignShareUrl({
+      params,
+      goals,
+      topMaterial: materials.topMaterial,
+      baseMaterial: materials.baseMaterial,
+    }, window.location.href);
+    window.history.replaceState(null, '', url);
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareStatus('Link copied');
+    } catch {
+      setShareStatus('Link added to address bar');
+    }
+    window.setTimeout(() => setShareStatus(null), 2500);
+  }, [goals, materials.baseMaterial, materials.topMaterial, params]);
 
   const applyMaterialScenario = useCallback((ejGhz: number, ecGhz: number) => {
     setParams((current) => ({
@@ -172,6 +244,31 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const stored = window.localStorage.getItem(HISTORY_KEY);
+        if (stored) setHistory((JSON.parse(stored) as DesignSnapshot[]).slice(0, 10));
+      } catch {
+        window.localStorage.removeItem(HISTORY_KEY);
+      }
+      const shared = parseDesignShareUrl(window.location.href);
+      if (shared) {
+        setParams(shared.params);
+        setGoals(shared.goals);
+        setMaterials({
+          topMaterial: shared.topMaterial,
+          baseMaterial: shared.baseMaterial,
+          topColor: materialColor(shared.topMaterial),
+          baseColor: materialColor(shared.baseMaterial),
+        });
+        setShareStatus('Shared design loaded');
+        window.setTimeout(() => setShareStatus(null), 2500);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         if (guidedOpen) {
@@ -232,6 +329,22 @@ export default function Page() {
         >
           {guidedOpen ? 'Exit tour' : 'Guided learning'}
         </button>
+        {shareStatus && <span className="share-status">{shareStatus}</span>}
+        <button type="button" className="btn" data-tour="share-link" onClick={copyShareLink}>Copy link</button>
+        <button type="button" className="btn primary" data-tour="save-design" onClick={saveCurrentDesign}>Save</button>
+        <button type="button" className="btn" data-tour="restore-latest" onClick={restoreLatestDesign} disabled={history.length === 0}>Restore</button>
+        <details className="history-menu" data-tour="history">
+          <summary>Saved ({history.length})</summary>
+          <div className="history-popover">
+            <strong>Saved designs</strong>
+            {history.length === 0 ? <p>Save a design to keep it here.</p> : history.map((item) => (
+              <button key={item.id} type="button" onClick={() => restoreSnapshot(item)}>
+                <span><RichMathText>{`f01 ${num(item.goals.target_ghz, 1)} GHz · EJ ${num(item.params.ej_ghz, 2)} GHz · EC ${num(item.params.ec_ghz, 3)} GHz`}</RichMathText></span>
+                <small>{item.topMaterial} + {item.baseMaterial} · {new Date(item.savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small>
+              </button>
+            ))}
+          </div>
+        </details>
         <label className="preset-control" data-tour="presets">
           Demo
           <select defaultValue="" onChange={(event) => {
@@ -252,7 +365,7 @@ export default function Page() {
           data-tour="reset-params"
           onClick={() => setParams(DEFAULT_PARAMS)}
           disabled={atDefaults}
-          title="Return EJ, EC, ng and ncut to the model defaults"
+          title="Return E_J, E_C, n_g and ncut to the model defaults"
         >
           Reset parameters
         </button>
@@ -339,6 +452,7 @@ export default function Page() {
               {selected && <span className="badge live">{PART_BY_ID[selected].name}</span>}
             </div>
             <Viewport3D
+              params={params}
               selected={selected}
               hiddenParts={hiddenParts}
               explode={explode}

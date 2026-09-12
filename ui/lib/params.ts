@@ -21,7 +21,7 @@ export const PARAMS: Record<ParamKey, ParamSpec> = {
   ej_ghz: {
     key: 'ej_ghz',
     label: 'Tunnelling strength',
-    symbol: 'EJ/h',
+    symbol: 'E_J/h',
     unit: 'GHz',
     min: 0.01,
     max: 50,
@@ -33,7 +33,7 @@ export const PARAMS: Record<ParamKey, ParamSpec> = {
   ec_ghz: {
     key: 'ec_ghz',
     label: 'Charging cost',
-    symbol: 'EC/h',
+    symbol: 'E_C/h',
     unit: 'GHz',
     min: 0.01,
     max: 2,
@@ -45,7 +45,7 @@ export const PARAMS: Record<ParamKey, ParamSpec> = {
   ng: {
     key: 'ng',
     label: 'Offset charge',
-    symbol: 'ng',
+    symbol: 'n_g',
     unit: '2e',
     min: 0,
     max: 1,
@@ -57,7 +57,7 @@ export const PARAMS: Record<ParamKey, ParamSpec> = {
   ncut: {
     key: 'ncut',
     label: 'Charge basis cutoff',
-    symbol: 'ncut',
+    symbol: 'n_{\\mathrm{cut}}',
     unit: '',
     min: 20,
     max: 60,

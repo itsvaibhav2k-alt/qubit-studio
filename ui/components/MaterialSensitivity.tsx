@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import MathText from '@/components/MathText';
 import { num, signed } from '@/lib/format';
 import { BCQT_SOURCE, MATERIAL_CATALOG, MATERIAL_RECORDS } from '@/lib/material-records';
 import { materialColor } from '@/lib/material-colors';
@@ -141,7 +142,7 @@ export default function MaterialSensitivity({ params, result, onApply, onMateria
               <dt>Full stack</dt><dd>{majoranaRecord.layers.join(' · ')}</dd>
             </dl>
             <p className="scenario-scope">
-              No EJ/EC or comparable resonator-loss record is provided.{' '}
+              No <MathText math="E_J/E_C" /> or comparable resonator-loss record is provided.{' '}
               <a href={majoranaRecord.sourceUrl} target="_blank" rel="noreferrer">Source data</a>.
             </p>
           </>
@@ -211,7 +212,7 @@ export default function MaterialSensitivity({ params, result, onApply, onMateria
             <dt>Dispersion</dt><dd>{num(comparison.baseline.dispersion_upper_khz, 3)} → {num(comparison.modified.dispersion_upper_khz, 3)} kHz</dd>
           </dl>
           <button type="button" className="btn" onClick={() => onApply(comparison.modified.ej_ghz, comparison.modified.ec_ghz)}>
-            Apply modified EJ and EC
+            Apply modified <MathText math="E_J" /> and <MathText math="E_C" />
           </button>
           <p className="scenario-scope">{comparison.scope}.</p>
         </div>

@@ -53,6 +53,25 @@ export const TOUR_STEPS: TourStep[] = [
     target: 'reset-params',
   },
   {
+    id: 'save-design',
+    title: 'Save design',
+    body: 'Stores the current $E_J$, $E_C$, $n_g$, goals, and materials in this browser (up to 10).\nRestore or the Saved menu brings one back. Nothing is uploaded.',
+    target: 'save-design',
+  },
+  {
+    id: 'history',
+    title: 'Saved history',
+    body: 'A list of designs you saved here. Click one to restore its parameters and material pair.\nCopy link writes the same state into the URL so a teammate can open it.',
+    target: 'history',
+  },
+  {
+    id: 'geometry',
+    title: 'Shape the junction and capacitor',
+    body: 'On Edit chip, this converts area into $E_J$ and $E_C$ with two stated teaching assumptions, then reshapes the 3D pads and junction.\nIt is not a mask layout. Apply writes the estimated energies onto the live chip.',
+    target: 'geometry',
+    tab: 'edit',
+  },
+  {
     id: 'parts',
     title: 'Parts list',
     body: 'This column is the bill of materials for the drawing. Click a name to select it on the chip and open its slider on the right.\nOnly three parts change the math: the junction ($E_J$), the pads ($E_C$), and the gate ($n_g$).',

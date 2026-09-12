@@ -1,5 +1,7 @@
 'use client';
 
+import GeometryEditor from './GeometryEditor';
+import MathText from './MathText';
 import ParamField from './ParamField';
 import MaterialSensitivity from './MaterialSensitivity';
 import DesignLab from './DesignLab';
@@ -107,12 +109,11 @@ export default function Inspector({
               <details className="tech" data-tour="tech-detail">
                 <summary>Technical detail</summary>
                 <div className="body">
-                  <p style={{ margin: 0 }}>{PARAMS[part.param].meaning}</p>
+                  <p style={{ margin: 0 }}><MathText text={PARAMS[part.param].meaning} /></p>
                   <dl>
-                    <dt>{PARAMS[part.param].symbol}</dt>
+                    <dt><MathText math={PARAMS[part.param].symbol} /></dt>
                     <dd>
-                      {num(params[part.param], PARAMS[part.param].digits)}{' '}
-                      {PARAMS[part.param].unit || '(dimensionless)'}
+                      <MathText math={`${num(params[part.param], PARAMS[part.param].digits)}${PARAMS[part.param].unit ? `\\,\\mathrm{${PARAMS[part.param].unit === '2e' ? '2e' : PARAMS[part.param].unit}}` : ''}`} />
                     </dd>
                     <dt>range</dt>
                     <dd>
@@ -120,20 +121,20 @@ export default function Inspector({
                     </dd>
                     {part.param !== 'ng' && result && (
                       <>
-                        <dt>EJ/EC</dt>
-                        <dd>{num(result.ratio, 1)}</dd>
+                        <dt><MathText math="E_J/E_C" /></dt>
+                        <dd><MathText math={num(result.ratio, 1)} /></dd>
                       </>
                     )}
                   </dl>
                   {part.param === 'ej_ghz' && (
                     <p style={{ margin: '6px 0 0' }}>
-                      EJ and EC are independent inputs here. The transition frequency is an output of the
+                      <MathText math="E_J" /> and <MathText math="E_C" /> are independent inputs here. The transition frequency is an output of the
                       solver, not a target you set.
                     </p>
                   )}
                   {part.param === 'ng' && (
                     <p style={{ margin: '6px 0 0' }}>
-                      Sweeping ng from 0 to 1 traces the charge-dispersion curve in the results dock.
+                      Sweeping <MathText math="n_g" /> from 0 to 1 traces the charge-dispersion curve in the results dock.
                     </p>
                   )}
                 </div>
@@ -171,11 +172,14 @@ export default function Inspector({
         />}
 
       {tab === 'edit' && <div className="insp-section quiet-section">
+          <div data-tour="geometry">
+            <GeometryEditor key={`${params.ej_ghz}-${params.ec_ghz}`} params={params} onApply={onApplyMaterialScenario} />
+          </div>
           <details className="tech" data-tour="ncut">
             <summary>Advanced solver setting</summary>
             <div className="body">
               <ParamField paramKey="ncut" value={params.ncut} onChange={onChange} onAsk={() => onAsk('ncut')} tourId="ncut" />
-              <p style={{ margin: '8px 0 0' }}>{PARAMS.ncut.meaning}</p>
+              <p style={{ margin: '8px 0 0' }}><MathText text={PARAMS.ncut.meaning} /></p>
             </div>
           </details>
           <p className="model-note">

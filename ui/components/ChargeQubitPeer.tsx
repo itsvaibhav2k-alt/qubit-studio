@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import MathText from '@/components/MathText';
 import { DASH, dispersionDisplay, num } from '@/lib/format';
 import { PARAMS } from '@/lib/params';
 import type { DeviceParams, DeviceResult } from '@/lib/types';
@@ -59,20 +60,19 @@ export default function ChargeQubitPeer({ params, result, enabled }: ChargeQubit
 
   return (
     <div className="physics-compare" data-tour="charge-peer">
-      <h4>Same E_C, charge-qubit E_J</h4>
+      <h4><MathText text="Same $E_C$, charge-qubit $E_J$" /></h4>
       <p className="cap">
-        Extra solver run at E_J = E_C (ratio 1). Same charging energy, no extra invention — the quietness of a
-        transmon is the point.
+        <MathText text="Extra solver run at $E_J = E_C$ (ratio 1). Same charging energy, no extra invention — the quietness of a transmon is the point." />
       </p>
       {error && <p className="empty">{error}</p>}
       <div className="compare-row">
         <span />
         <strong>This chip</strong>
         <strong>Charge qubit</strong>
-        <span>E_J / E_C</span>
+        <span><MathText math="E_J/E_C" /></span>
         <span>{num(result.ratio, 1)}</span>
         <span>{peer ? num(peer.ratio, 1) : DASH}</span>
-        <span>f01</span>
+        <span><MathText math="f_{01}" /></span>
         <span>{num(result.f01_ghz, 3)} GHz</span>
         <span>{peer ? `${num(peer.f01_ghz, 3)} GHz` : DASH}</span>
         <span>Charge wiggle</span>

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import ChargeQubitPeer from '@/components/ChargeQubitPeer';
 import DriveCartoon from '@/components/DriveCartoon';
+import MathText from '@/components/MathText';
 import { DASH, delta, dispersionDisplay, num, paramSummary, signed } from '@/lib/format';
 import { approxDeltaMhz, transmonApproxF01Ghz } from '@/lib/transmon-approx';
 import type { TopicId } from '@/lib/explain-topics';
@@ -45,11 +46,11 @@ function Metric({ topicId, selected, label, symbol, value, muted, note, deltaTex
       onClick={() => onSelectTopic(topicId)}
     >
       <div className="k">
-        {label} {symbol && <span className="sym">{symbol}</span>}
+        <MathText text={label} /> {symbol && <span className="sym"><MathText text={symbol} /></span>}
       </div>
       <div className={`v${muted ? ' none' : ''}`}>{value}</div>
       {deltaText && <div className={`d ${deltaText.tone}`}>{deltaText.text}</div>}
-      {note && <div className="note">{note}</div>}
+      {note && <div className="note"><MathText text={note} /></div>}
     </button>
   );
 }
@@ -91,11 +92,11 @@ function EnergyLevels({ result, baseline }: { result: DeviceResult; baseline: De
         <>
           <line x1="62" x2="62" y1={y(levels[0])} y2={y(levels[1])} stroke="#1a6fe0" strokeWidth="1.4" />
           <text x="68" y={(y(levels[0]) + y(levels[1])) / 2 + 3} fontSize="10" fill="#1a6fe0">
-            f01 {num(result.f01_ghz, 3)} GHz
+            f₀₁ {num(result.f01_ghz, 3)} GHz
           </text>
           <line x1="62" x2="62" y1={y(levels[1])} y2={y(levels[2])} stroke="#5c6672" strokeWidth="1.4" />
           <text x="68" y={(y(levels[1]) + y(levels[2])) / 2 + 3} fontSize="10" fill="#5c6672">
-            f12 {num(result.f12_ghz, 3)} GHz
+            f₁₂ {num(result.f12_ghz, 3)} GHz
           </text>
         </>
       )}
@@ -141,7 +142,7 @@ function ChargeResponse({ result, baseline }: { result: DeviceResult; baseline: 
       <polyline points={path(points, reference)} fill="none" stroke="#1a6fe0" strokeWidth="1.8" />
       <circle cx={x(result.ng)} cy={y(shiftKhz(result.f01_ghz, reference))} r="3.6" fill="#1a6fe0" />
       <text x="52" y={CHART_H - 8} fontSize="10" fill="#878f9b">
-        ng 0
+        n_g 0
       </text>
       <text x={CHART_W - 16} y={CHART_H - 8} fontSize="10" textAnchor="end" fill="#878f9b">
         1
@@ -175,7 +176,7 @@ export default function ResultsDock({
   const approxDelta = result && approx !== null ? approxDeltaMhz(result.f01_ghz, result.ej_ghz, result.ec_ghz) : null;
   const approxNote =
     result && approx !== null && Number.isFinite(approx)
-      ? `approx √(8 EJ EC) − EC = ${num(approx, 3)} GHz · solver − formula ${signed(approxDelta, 0)} MHz`
+      ? `approx $\\sqrt{8 E_J E_C}-E_C$ = ${num(approx, 3)} GHz · solver − formula ${signed(approxDelta, 0)} MHz`
       : 'How fast the qubit changes between its two lowest states.';
   const baselineDispersion = baseline ? dispersionDisplay(baseline) : null;
   const checks = result ? [
@@ -202,7 +203,7 @@ export default function ResultsDock({
       <div className="panel-head">
         Results
         <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-3)' }}>
-          {result ? paramSummary(result) : error ? 'no completed calculation' : 'waiting for first result'}
+          {result ? <MathText text={paramSummary(result)} /> : error ? 'no completed calculation' : 'waiting for first result'}
         </span>
       </div>
 
@@ -250,10 +251,10 @@ export default function ResultsDock({
           topicId="f12"
           selected={selectedTopics.has('f12')}
           onSelectTopic={onSelectTopic}
-          label="Next rung f12"
+          label="Next rung $f_{12}$"
           value={result ? `${num(result.f12_ghz, 3)} GHz` : DASH}
           muted={!result}
-          note="|1⟩ → |2⟩. A drive at f01 should miss this line."
+          note="$|1\\rangle \\to |2\\rangle$. A drive at $f_{01}$ should miss this line."
           deltaText={delta(result?.f12_ghz, baseline?.f12_ghz, 4, 'GHz')}
         />
         <Metric
@@ -263,7 +264,7 @@ export default function ResultsDock({
           label="Level separation"
           value={result ? `${num(result.anharmonicity_mhz, 1)} MHz` : DASH}
           muted={!result}
-          note="α = f12 − f01. Bigger |α| means less leakage into |2⟩."
+          note="$\\alpha = f_{12}-f_{01}$. Bigger $|\\alpha|$ means less leakage into $|2\\rangle$."
           deltaText={delta(result?.anharmonicity_mhz, baseline?.anharmonicity_mhz, 1, 'MHz')}
         />
         <Metric
@@ -273,7 +274,7 @@ export default function ResultsDock({
           label="Charge sensitivity"
           value={dispersion.text}
           muted={!result || !dispersion.resolved}
-          note={dispersion.note || 'How much stray ng would move f01.'}
+          note={dispersion.note || 'How much stray $n_g$ would move $f_{01}$.'}
           deltaText={
             dispersion.resolved && baselineDispersion?.resolved
               ? delta(result?.dispersion_khz, baseline?.dispersion_khz, 3, 'kHz')
@@ -295,10 +296,10 @@ export default function ResultsDock({
           <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>Clear</button>
         </div>
         <div className="dock-grid technical-grid">
-          <Metric topicId="ratio" selected={selectedTopics.has('ratio')} onSelectTopic={onSelectTopic} label="EJ / EC ratio" value={result ? num(result.ratio, 1) : DASH} muted={!result} deltaText={delta(result?.ratio, baseline?.ratio, 1, '')} />
-          <Metric topicId="alpha" selected={selectedTopics.has('alpha')} onSelectTopic={onSelectTopic} label="Signed anharmonicity" symbol="α = f12 − f01" value={result ? `${signed(result.alpha_mhz, 1)} MHz` : DASH} muted={!result} deltaText={delta(result?.alpha_mhz, baseline?.alpha_mhz, 1, 'MHz')} />
-          <Metric topicId="junction" selected={selectedTopics.has('junction')} onSelectTopic={onSelectTopic} label="Critical current" symbol="derived from EJ" value={result?.critical_current_na !== undefined ? `${num(result.critical_current_na, 2)} nA` : DASH} muted={result?.critical_current_na === undefined} />
-          <Metric topicId="capacitor" selected={selectedTopics.has('capacitor')} onSelectTopic={onSelectTopic} label="Total capacitance" symbol="derived from EC" value={result?.total_capacitance_ff !== undefined ? `${num(result.total_capacitance_ff, 2)} fF` : DASH} muted={result?.total_capacitance_ff === undefined} />
+          <Metric topicId="ratio" selected={selectedTopics.has('ratio')} onSelectTopic={onSelectTopic} label="$E_J/E_C$ ratio" value={result ? num(result.ratio, 1) : DASH} muted={!result} deltaText={delta(result?.ratio, baseline?.ratio, 1, '')} />
+          <Metric topicId="alpha" selected={selectedTopics.has('alpha')} onSelectTopic={onSelectTopic} label="Signed anharmonicity" symbol="$\\alpha = f_{12}-f_{01}$" value={result ? `${signed(result.alpha_mhz, 1)} MHz` : DASH} muted={!result} deltaText={delta(result?.alpha_mhz, baseline?.alpha_mhz, 1, 'MHz')} />
+          <Metric topicId="junction" selected={selectedTopics.has('junction')} onSelectTopic={onSelectTopic} label="Critical current" symbol="derived from $E_J$" value={result?.critical_current_na !== undefined ? `${num(result.critical_current_na, 2)} nA` : DASH} muted={result?.critical_current_na === undefined} />
+          <Metric topicId="capacitor" selected={selectedTopics.has('capacitor')} onSelectTopic={onSelectTopic} label="Total capacitance" symbol="derived from $E_C$" value={result?.total_capacitance_ff !== undefined ? `${num(result.total_capacitance_ff, 2)} fF` : DASH} muted={result?.total_capacitance_ff === undefined} />
         </div>
         {result && <DriveCartoon result={result} />}
         {result && <ChargeQubitPeer params={result} result={result} enabled={detailsOpen} />}
@@ -330,7 +331,7 @@ export default function ResultsDock({
 
       {stale && (
         <p style={{ margin: 0, padding: '6px 12px 10px', fontSize: 11, color: 'var(--warn)' }}>
-          Updating — the values above still describe {result ? paramSummary(result) : 'the previous parameters'}.
+          Updating — the values above still describe {result ? <MathText text={paramSummary(result)} /> : 'the previous parameters'}.
         </p>
       )}
     </>

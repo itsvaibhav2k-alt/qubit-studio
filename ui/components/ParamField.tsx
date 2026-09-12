@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import MathText from '@/components/MathText';
 import { PARAMS, clampParam } from '@/lib/params';
 import type { ParamKey } from '@/lib/params';
 
@@ -52,7 +53,7 @@ export default function ParamField({ paramKey, value, onChange, onAsk, tourId }:
         <label htmlFor={`p-${paramKey}`} className={onAsk ? 'myla-hit' : undefined} onClick={() => onAsk?.(paramKey)}>
           {spec.label}
         </label>
-        <span className="sym">{spec.symbol}</span>
+        <span className="sym"><MathText math={spec.symbol} /></span>
         <button
           type="button"
           className="reset"
