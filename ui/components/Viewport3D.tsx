@@ -13,18 +13,25 @@ import type { Rect } from '@/lib/camera-fit';
 import { ANCHORS, FRAME, PARTS_GEOMETRY } from '@/lib/chip-geometry';
 import type { Projected } from '@/lib/connector';
 import type { PartId } from '@/lib/parts';
+import { DEFAULT_COMPONENT_MATERIALS, resolveMaterial, type ComponentMaterials } from '@/lib/component-materials';
 
 export interface ViewportHandle {
   resetView: () => void;
 }
 
 /** Default pose: front-left, elevated, the reference's angle. Unit direction from target to camera. */
-const AZIMUTH = (-40 * Math.PI) / 180;
-const ELEVATION = (47 * Math.PI) / 180;
+const AZIMUTH = (-34 * Math.PI) / 180;
+const ELEVATION = (51 * Math.PI) / 180;
 const DEFAULT_DIRECTION = new Vector3(
   Math.cos(ELEVATION) * Math.sin(AZIMUTH),
   Math.sin(ELEVATION),
   Math.cos(ELEVATION) * Math.cos(AZIMUTH),
+);
+const EXPLODED_ELEVATION = (28 * Math.PI) / 180;
+const EXPLODED_DIRECTION = new Vector3(
+  Math.cos(EXPLODED_ELEVATION) * Math.sin(AZIMUTH),
+  Math.sin(EXPLODED_ELEVATION),
+  Math.cos(EXPLODED_ELEVATION) * Math.cos(AZIMUTH),
 );
 /** Fill this fraction of the free region's limiting angle. */
 const FILL = 0.97;
@@ -112,7 +119,8 @@ function Framing({ region, explodeTarget, settled, assemblyRef, fitRef }: Framin
       offset();
       const target = controls?.target ?? new Vector3();
       if (resetPose) target.set(0, 0, 0);
-      const direction = resetPose ? DEFAULT_DIRECTION.clone() : camera.position.clone().sub(target);
+      const defaultDirection = explodeTarget > 0 ? EXPLODED_DIRECTION : DEFAULT_DIRECTION;
+      const direction = resetPose || !userMovedRef.current ? defaultDirection.clone() : camera.position.clone().sub(target);
       if (direction.lengthSq() === 0) direction.copy(DEFAULT_DIRECTION);
       const currentDistance = direction.length();
       const floor = (d: number) => (userMovedRef.current && !resetPose ? Math.max(d, currentDistance) : d);
@@ -218,7 +226,9 @@ interface SceneProps {
   hiddenParts: PartId[];
   explode: number;
   region: Rect | null;
-  materialColors: Partial<Record<PartId,string>>;
+  materialColors?: Partial<Record<PartId,string>>;
+  materials?: ComponentMaterials;
+  renderQuality?: 'balanced' | 'high';
   onSelect: (id: PartId) => void;
   controlsRef: React.RefObject<OrbitControlsImpl | null>;
   fitRef: React.RefObject<((resetPose: boolean) => void) | null>;
@@ -226,7 +236,7 @@ interface SceneProps {
   wrapperRef: React.RefObject<HTMLDivElement | null>;
 }
 
-function Scene({ selected, hiddenParts, explode, region, onSelect, controlsRef, fitRef, anchorRef, wrapperRef, materialColors }: SceneProps) {
+function Scene({ selected, hiddenParts, explode, region, onSelect, controlsRef, fitRef, anchorRef, wrapperRef, materialColors = {}, materials, renderQuality = 'high' }: SceneProps) {
   const explodeRef = useRef(explode);
   const assemblyRef = useRef<Group | null>(null);
   const smooth = useSmoothedExplode(explode, explodeRef);
@@ -234,7 +244,7 @@ function Scene({ selected, hiddenParts, explode, region, onSelect, controlsRef, 
 
   return (
     <>
-      <StudioLighting />
+      <StudioLighting quality={renderQuality} />
 
       <group ref={assemblyRef}>
         {PART_ORDER.map((id) => (
@@ -242,6 +252,7 @@ function Scene({ selected, hiddenParts, explode, region, onSelect, controlsRef, 
             key={id}
             id={id}
             color={materialColors[id]}
+            material={resolveMaterial(materials?.[id] ?? DEFAULT_COMPONENT_MATERIALS[id])}
             selected={selected === id}
             hidden={hiddenParts.includes(id)}
             explode={smooth}
@@ -251,7 +262,8 @@ function Scene({ selected, hiddenParts, explode, region, onSelect, controlsRef, 
         ))}
       </group>
 
-      <ContactShadows position={[0, floorY, 0]} scale={6} blur={2.8} opacity={0.32} far={2.5} resolution={1024} frames={Infinity} />
+      {/* This soft shadow stays at a fixed resolution so quality changes reuse its render targets. */}
+      <ContactShadows position={[0, floorY, 0]} scale={4.5} blur={2.3} opacity={0.44} far={1.1} resolution={1024} frames={Infinity} />
 
       <Framing region={region} explodeTarget={explode} settled={smooth === explode} assemblyRef={assemblyRef} fitRef={fitRef} />
       <Projector selected={selected} explodeRef={explodeRef} anchorRef={anchorRef} wrapperRef={wrapperRef} assemblyRef={assemblyRef} />
@@ -287,6 +299,8 @@ export default function Viewport3D({
   onClearSelection,
   handleRef,
   materialColors,
+  materials,
+  renderQuality = 'high',
 }: Viewport3DProps) {
   const interaction=useContext(HardwareContext);
   const active=interaction?.active??activeProp;
@@ -309,14 +323,25 @@ export default function Viewport3D({
   );
 
   return (
-    <div ref={wrapperRef} className="hardware-canvas" data-selected={selected??''} data-explode={explode}>
+    <div ref={wrapperRef} className="hardware-canvas" data-selected={selected??''} data-explode={explode} data-render-quality={renderQuality}>
     <Canvas
       camera={{ position: DEFAULT_DIRECTION.clone().multiplyScalar(5).toArray(), fov: 30, near: 0.1, far: 60 }}
-      dpr={[1, 2]}
+      dpr={renderQuality === 'high' ? [2, 2.5] : [1, 1.5]}
       frameloop={active ? 'always' : 'never'}
       shadows={{ type: PCFShadowMap }}
       onPointerMissed={onClearSelection}
-      gl={{ antialias: true, toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
+      gl={{
+        antialias: true,
+        // The embedded browser presents captured frames between animation ticks.
+        preserveDrawingBuffer: true,
+        toneMapping: ACESFilmicToneMapping,
+        toneMappingExposure: 1.0,
+      }}
+      onCreated={({ gl }) => {
+        // Refraction needs one multisampled buffer per camera. Keep that buffer
+        // compact while the visible geometry retains the full high-detail DPR.
+        gl.transmissionResolutionScale = 0.5;
+      }}
       style={{ position: 'absolute', inset: 0 }}
     >
       <Scene
@@ -325,6 +350,8 @@ export default function Viewport3D({
         explode={explode}
         region={null}
         materialColors={materialColors}
+        materials={materials}
+        renderQuality={renderQuality}
         onSelect={select}
         controlsRef={controlsRef}
         fitRef={fitRef}

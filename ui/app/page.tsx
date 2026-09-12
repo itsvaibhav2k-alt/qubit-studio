@@ -13,12 +13,14 @@ import type { PartId } from '@/lib/parts';
 import { useEvaluate } from '@/lib/useEvaluate';
 import { useExplain } from '@/lib/useExplain';
 import type { DesignGoals, DeviceParams, DeviceResult } from '@/lib/types';
-import { materialColor, materialPartColors } from '@/lib/material-colors';
+import { materialColor } from '@/lib/material-colors';
 import type { MaterialAppearance } from '@/lib/material-colors';
 import { useExperimentSession } from '@/lib/useExperimentSession';
 import { completedDevice, validDeviceParams } from '@/lib/device-snapshot';
 import { buildExportReport } from '@/lib/export-report';
 import { validExperimentGoals } from '@/lib/experiment-session';
+import { useComponentMaterials } from '@/lib/useComponentMaterials';
+import { applyLayerMaterials, assignComponentMaterial } from '@/lib/component-material-selection';
 
 const Viewport3D = dynamic(() => import('@/components/Viewport3D'), {
   ssr: false,
@@ -45,6 +47,8 @@ export default function Page() {
   const [hiddenParts, setHiddenParts] = useState<PartId[]>([]);
   const [mode, setMode] = useState<'explore' | 'design'>('explore');
   const [explode, setExplode] = useState(0);
+  const [renderQuality, setRenderQuality] = useState<'balanced' | 'high'>('high');
+  const [componentMaterials, updateComponentMaterials] = useComponentMaterials();
   const [baseline, setBaseline] = useState<DeviceResult | null>(null);
   const [goals, setGoals] = useState<DesignGoals>(DEFAULT_GOALS);
   const [materials, setMaterials] = useState<MaterialAppearance>({
@@ -76,9 +80,10 @@ export default function Page() {
         error,
         goals,
         materials,
+        componentMaterials,
         experiments: experiments.evidence,
       }),
-    [params, result, baseline, selected, stale, error, goals, materials, experiments.evidence],
+    [params, result, baseline, selected, stale, error, goals, materials, componentMaterials, experiments.evidence],
   );
 
   const topicsArray = useMemo(() => Array.from(selectedTopics), [selectedTopics]);
@@ -100,9 +105,16 @@ export default function Page() {
       topColor: materialColor(topMaterial),
       baseColor: materialColor(baseMaterial),
     });
-  }, []);
+    updateComponentMaterials(current => applyLayerMaterials(
+      current,
+      topMaterial !== materials.topMaterial ? topMaterial : undefined,
+      baseMaterial !== materials.baseMaterial ? baseMaterial : undefined,
+    ));
+  }, [materials.topMaterial, materials.baseMaterial, updateComponentMaterials]);
 
-  const currentMaterialColors = materials.topMaterial==='Al'&&materials.baseMaterial==='Si'?{}:materialPartColors(materials);
+  const changeComponentMaterial = useCallback((part: PartId, material: string) => {
+    updateComponentMaterials(current => assignComponentMaterial(current, part, material));
+  }, [updateComponentMaterials]);
 
   const onSelectTopic = useCallback((id: TopicId) => {
     setSelectedTopics((current) => {
@@ -166,7 +178,7 @@ export default function Page() {
         : { className: 'badge', text: 'Calculating…' };
 
   const exportReport = () => {
-    const report = buildExportReport({ params, result, status, stale, goals, materials, baseline, experiments: experiments.evidence });
+    const report = buildExportReport({ params, result, status, stale, goals, materials, componentMaterials, baseline, experiments: experiments.evidence });
     if (!report) return;
     const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a');
@@ -184,6 +196,8 @@ export default function Page() {
     <>
       <LayoutWorkbench
         mode={mode} onMode={setMode} status={statusBadge}
+        componentMaterials={componentMaterials} onComponentMaterialChange={changeComponentMaterial}
+        renderQuality={renderQuality} onRenderQuality={setRenderQuality}
         hiddenParts={hiddenParts} onToggleVisible={toggleVisible}
         explode={explode} onExplode={setExplode} onReset3d={() => viewportRef.current?.resetView()}
         onExport={exportReport} canExport={canPin && validExperimentGoals(goals)}
@@ -205,7 +219,7 @@ export default function Page() {
       >
         <Viewport3D selected={selected} hiddenParts={hiddenParts} explode={explode}
           onSelect={selectPart} onClearSelection={clearSelection} active
-          handleRef={viewportRef} materialColors={currentMaterialColors}/>
+          handleRef={viewportRef} materialColors={{}} materials={componentMaterials} renderQuality={renderQuality}/>
       </LayoutWorkbench>
       <AskLlm open={llmOpen} onOpenChange={setLlmOpen} topics={topicsArray} snapshot={snapshot} explain={explain}/>
     </>

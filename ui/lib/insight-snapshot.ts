@@ -1,5 +1,6 @@
 import { PART_BY_ID, type PartId } from './parts.ts';
 import { MATERIAL_RECORDS } from './material-records.ts';
+import { MATERIAL_BY_ID, type ComponentMaterials } from './component-materials.ts';
 import type { DesignGoals, DeviceParams, DeviceResult } from './types.ts';
 import type { ChipSnapshot, SnapshotExperiment, SnapshotMaterials, SnapshotOutputs } from './insight-types.ts';
 
@@ -54,6 +55,7 @@ export function buildChipSnapshot(input: {
   params: DeviceParams; result: DeviceResult | null; baseline: DeviceResult | null;
   selected: PartId | null; stale: boolean; error: string | null;
   goals?: DesignGoals; materials?: { topMaterial: string; baseMaterial: string };
+  componentMaterials?: ComponentMaterials;
   experiments?: Array<Omit<SnapshotExperiment, 'freshness'> & { current: boolean }>;
 }): ChipSnapshot {
   const matching = input.result !== null && sameParams(input.params, input.result);
@@ -69,6 +71,7 @@ export function buildChipSnapshot(input: {
     error: input.error ? 'The current solver calculation failed.' : null,
     ...(input.goals ? { goals: { ...input.goals } } : {}),
     ...(input.materials ? { materials: snapshotMaterials(input.materials) } : {}),
+    ...(input.componentMaterials ? { rendered_component_materials: { ...input.componentMaterials } } : {}),
     ...(input.experiments ? { experiments: input.experiments.map(({ current, ...evidence }) => ({ ...evidence, freshness: current ? 'current' as const : 'outdated' as const })) } : {}),
   };
 }
@@ -118,6 +121,19 @@ function parseEvidenceMap(raw: unknown, nullable: boolean): Record<string, numbe
   return parsed;
 }
 
+/** Only canonical appearance IDs are accepted; arbitrary text cannot enter this context. */
+function parseRenderedComponentMaterials(raw: unknown): ComponentMaterials | null {
+  if (!isObject(raw) || Object.keys(raw).length !== PART_IDS.size) return null;
+  const entries: Array<[PartId, string]> = [];
+  for (const part of PART_IDS) {
+    if (!Object.hasOwn(raw, part)) return null;
+    const material = raw[part];
+    if (typeof material !== 'string' || !Object.hasOwn(MATERIAL_BY_ID, material)) return null;
+    entries.push([part, material]);
+  }
+  return Object.fromEntries(entries) as ComponentMaterials;
+}
+
 export function parseChipSnapshot(body: unknown): { ok: true; snapshot: ChipSnapshot } | { ok: false; error: string } {
   const invalid = (error: string) => ({ ok: false as const, error });
   if (!isObject(body)) return invalid('Snapshot must be a JSON object.');
@@ -140,6 +156,9 @@ export function parseChipSnapshot(body: unknown): { ok: true; snapshot: ChipSnap
     if (!isObject(body.materials) || !shortText(body.materials.topMaterial, 80) || !shortText(body.materials.baseMaterial, 80)) return invalid('Snapshot material selection is invalid.');
     materials = snapshotMaterials({ topMaterial: body.materials.topMaterial, baseMaterial: body.materials.baseMaterial });
   }
+  const componentMaterials = body.rendered_component_materials === undefined
+    ? undefined : parseRenderedComponentMaterials(body.rendered_component_materials);
+  if (componentMaterials === null) return invalid('Snapshot rendered component materials must assign a known appearance to all seven parts.');
   let experiments: SnapshotExperiment[] | undefined;
   if (body.experiments !== undefined) {
     if (!Array.isArray(body.experiments) || body.experiments.length > 4) return invalid('Snapshot supports at most four completed experiments.');
@@ -162,6 +181,7 @@ export function parseChipSnapshot(body: unknown): { ok: true; snapshot: ChipSnap
     readiness: body.readiness as ChipSnapshot['readiness'], stale: body.stale,
     error: body.error ? 'The current solver calculation failed.' : null,
     ...(goals ? { goals } : {}), ...(materials ? { materials } : {}), ...(experiments ? { experiments } : {}),
+    ...(componentMaterials ? { rendered_component_materials: componentMaterials } : {}),
   } };
 }
 

@@ -51,7 +51,7 @@ export default function MaterialSensitivity({ session, params, result, onApply, 
 
   return (
     <div className="insp-section material-sensitivity">
-      <div className="insp-title">Material sandbox</div>
+      <div className="insp-title">Film / substrate sensitivity</div>
       <p className="insp-role">
         Combine any two real materials from the verified catalog—even the same material twice.
       </p>
@@ -78,7 +78,7 @@ export default function MaterialSensitivity({ session, params, result, onApply, 
         </span>
       </div>
 
-      <p className="visual-note">The 3D chip updates immediately using representative room-light colors: metal films are silver/gray except gold-toned TiN, and the base reflects the substrate. Color is visual only.</p>
+      <p className="visual-note">Changing Top material assigns the electrodes, gate and ground; changing Base material assigns only the substrate. Use Component material to customize parts individually. Their optical appearance does not change electrical inputs.</p>
 
       <div className="material-record">
         {matchingRecord?.kind === 'resonator-loss' ? (

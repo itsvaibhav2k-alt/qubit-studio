@@ -1,4 +1,5 @@
 import type { PartId } from './parts.ts';
+import type { ComponentMaterials } from './component-materials.ts';
 import type { DesignGoals, DeviceParams, DispersionStatus } from './types.ts';
 
 export type InsightTone = 'ok' | 'watch' | 'alert' | 'info';
@@ -81,6 +82,8 @@ export interface ChipSnapshot {
   readiness: 'ready' | 'pending' | 'error' | 'unavailable';
   goals?: DesignGoals;
   materials?: SnapshotMaterials;
+  /** Appearance-only assignments for the rendered parts; never electrical solver inputs or a fabricated stack. */
+  rendered_component_materials?: ComponentMaterials;
   experiments?: SnapshotExperiment[];
   stale: boolean;
   error: string | null;
