@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Inspector from '@/components/Inspector';
 import PartsTree from '@/components/PartsTree';
 import ResultsDock from '@/components/ResultsDock';
+import type { WorkMode } from '@/components/ResultsDock';
 import Schematic from '@/components/Schematic';
 import type { ViewportHandle } from '@/components/Viewport3D';
 import { DEFAULT_PARAMS, clampParam, sameParams } from '@/lib/params';
@@ -26,6 +27,7 @@ export default function Page() {
   const [selected, setSelected] = useState<PartId | null>(null);
   const [hiddenParts, setHiddenParts] = useState<PartId[]>([]);
   const [view, setView] = useState<ViewMode>('3d');
+  const [mode, setMode] = useState<WorkMode>('explore');
   const [explode, setExplode] = useState(0);
   const [baseline, setBaseline] = useState<DeviceResult | null>(null);
   const [hintOpen, setHintOpen] = useState(true);
@@ -78,6 +80,18 @@ export default function Page() {
       <header className="topbar">
         <div className="brand">
           Qubit Studio <span>transmon · simplified model</span>
+        </div>
+        <div className="seg" role="group" aria-label="Work mode">
+          {(
+            [
+              ['explore', 'Explore'],
+              ['design', 'Design'],
+            ] as Array<[WorkMode, string]>
+          ).map(([m, label]) => (
+            <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
+              {label}
+            </button>
+          ))}
         </div>
         <span className="spacer" />
         <span className={statusBadge.className}>{statusBadge.text}</span>
@@ -162,7 +176,11 @@ export default function Page() {
           </label>
           <span className="spacer" />
           <span style={{ fontSize: 12, color: 'var(--text-2)' }}>
-            {selected ? `Selected: ${PART_BY_ID[selected].name}` : 'Nothing selected'}
+            {mode === 'design'
+              ? 'Working design — no candidates generated yet'
+              : selected
+                ? `Selected: ${PART_BY_ID[selected].name}`
+                : 'Nothing selected'}
           </span>
         </div>
 
@@ -206,6 +224,7 @@ export default function Page() {
 
       <section className="pane pane-dock">
         <ResultsDock
+          mode={mode}
           result={result}
           baseline={baseline}
           stale={stale}

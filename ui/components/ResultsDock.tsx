@@ -1,9 +1,13 @@
 'use client';
 
+import { useState } from 'react';
 import { DASH, delta, dispersionDisplay, num, paramSummary, signed } from '@/lib/format';
 import type { ChargePoint, DeviceResult } from '@/lib/types';
 
+export type WorkMode = 'explore' | 'design';
+
 interface ResultsDockProps {
+  mode: WorkMode;
   result: DeviceResult | null;
   baseline: DeviceResult | null;
   stale: boolean;
@@ -139,6 +143,7 @@ function ChargeResponse({ result, baseline }: { result: DeviceResult; baseline: 
 }
 
 export default function ResultsDock({
+  mode,
   result,
   baseline,
   stale,
@@ -148,6 +153,8 @@ export default function ResultsDock({
   onClearBaseline,
   onRetry,
 }: ResultsDockProps) {
+  // ponytail: collapse state is per-mount; persist to localStorage if anyone asks.
+  const [chartsOpen, setChartsOpen] = useState(true);
   const dispersion = dispersionDisplay(result);
   const baselineDispersion = baseline ? dispersionDisplay(baseline) : null;
 
@@ -175,6 +182,15 @@ export default function ResultsDock({
         </button>
         <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>
           Clear
+        </button>
+        <button
+          type="button"
+          className="btn"
+          aria-expanded={chartsOpen}
+          onClick={() => setChartsOpen((open) => !open)}
+          title={chartsOpen ? 'Hide the charts, keep the metrics' : 'Show the charts'}
+        >
+          Charts {chartsOpen ? '▾' : '▸'}
         </button>
       </div>
 
@@ -225,21 +241,30 @@ export default function ResultsDock({
         />
       </div>
 
-      <div className="dock-lower">
-        <div className="chart">
-          <h4>Energy levels</h4>
-          <p className="cap">Relative to the ground state, GHz. Dashed = pinned baseline.</p>
-          {result ? <EnergyLevels result={result} baseline={baseline} /> : <p className="empty">{error ? 'No levels — the last calculation did not complete.' : 'Waiting for the first calculation…'}</p>}
+      {chartsOpen && (
+        <div className="dock-lower">
+          <div className="chart">
+            <h4>Energy levels</h4>
+            <p className="cap">Relative to the ground state, GHz. Dashed = pinned baseline.</p>
+            {result ? <EnergyLevels result={result} baseline={baseline} /> : <p className="empty">{error ? 'No levels — the last calculation did not complete.' : 'Waiting for the first calculation…'}</p>}
+          </div>
+          {mode === 'design' ? (
+            <div className="chart">
+              <h4>Trade-off</h4>
+              <p className="empty">Set requirements, then Find designs. Every evaluated candidate will appear here.</p>
+            </div>
+          ) : (
+            <div className="chart">
+              <h4>Charge response</h4>
+              <p className="cap">
+                Shift of f01 in kHz from its own value at ng 0{result ? ` (${num(result.charge_response[0]?.f01_ghz ?? Number.NaN, 6)} GHz, ${result.charge_response.length} solver points)` : ''}.
+                Dashed = pinned baseline, against its own ng 0.
+              </p>
+              {result ? <ChargeResponse result={result} baseline={baseline} /> : <p className="empty">{error ? 'No curve — nothing is interpolated locally.' : 'Waiting for the first calculation…'}</p>}
+            </div>
+          )}
         </div>
-        <div className="chart">
-          <h4>Charge response</h4>
-          <p className="cap">
-            Shift of f01 in kHz from its own value at ng 0{result ? ` (${num(result.charge_response[0]?.f01_ghz ?? Number.NaN, 6)} GHz, ${result.charge_response.length} solver points)` : ''}.
-            Dashed = pinned baseline, against its own ng 0.
-          </p>
-          {result ? <ChargeResponse result={result} baseline={baseline} /> : <p className="empty">{error ? 'No curve — nothing is interpolated locally.' : 'Waiting for the first calculation…'}</p>}
-        </div>
-      </div>
+      )}
 
       {stale && (
         <p style={{ margin: 0, padding: '6px 12px 10px', fontSize: 11, color: 'var(--warn)' }}>

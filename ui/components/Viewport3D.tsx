@@ -5,6 +5,8 @@ import { Edges, Line, OrbitControls } from '@react-three/drei';
 import { useEffect, useImperativeHandle, useRef } from 'react';
 import { Vector3, type PerspectiveCamera } from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+import { fitDistance, fittedDistance, sceneRadius } from '@/lib/camera-fit';
+import { PARTS_GEOMETRY } from '@/lib/chip-geometry';
 import { PART_BY_ID } from '@/lib/parts';
 import type { PartId } from '@/lib/parts';
 
@@ -91,32 +93,43 @@ function Solid({
   );
 }
 
-/** Radius of a sphere containing the assembled chip, with margin for exploded parts. */
-const SCENE_RADIUS = 1.2;
+interface FitToViewportProps {
+  explode: number;
+  fitRef: React.RefObject<(() => void) | null>;
+}
 
 /**
- * Keeps the whole chip framed when the canvas changes size — switching to Split
- * halves the width, and a frustum sized for the full width clips the object.
- * Only the camera distance changes, so the current orbit orientation survives.
+ * Keeps the whole chip inside the frustum when the canvas shrinks (Split halves
+ * the width) or the explode slider pushes parts outward. Only ever dollies OUT,
+ * and only along the current view direction, so manual orbit and zoom survive.
+ * The fit function is exposed through `fitRef` so Reset view can force it.
  */
-function FitToViewport() {
+function FitToViewport({ explode, fitRef }: FitToViewportProps) {
   const camera = useThree((state) => state.camera);
   const size = useThree((state) => state.size);
   const controls = useThree((state) => state.controls) as OrbitControlsImpl | null;
 
   useEffect(() => {
-    if (size.width < 2 || size.height < 2 || !('isPerspectiveCamera' in camera)) return;
-    const aspect = size.width / size.height;
-    const vertical = ((camera as PerspectiveCamera).fov * Math.PI) / 180;
-    const horizontal = 2 * Math.atan(Math.tan(vertical / 2) * aspect);
-    const distance = SCENE_RADIUS / Math.sin(Math.min(vertical, horizontal) / 2);
-    const target = controls?.target ?? new Vector3();
-    const direction = camera.position.clone().sub(target);
-    if (direction.lengthSq() === 0) return;
-    camera.position.copy(target).add(direction.setLength(distance));
-    camera.updateProjectionMatrix();
-    controls?.update();
-  }, [size.width, size.height, camera, controls]);
+    const fit = () => {
+      if (!('isPerspectiveCamera' in camera)) return;
+      const required = fitDistance(
+        sceneRadius(explode, PARTS_GEOMETRY),
+        (camera as PerspectiveCamera).fov,
+        size.width,
+        size.height,
+      );
+      const target = controls?.target ?? new Vector3();
+      const direction = camera.position.clone().sub(target);
+      const next = fittedDistance(direction.length(), required);
+      if (direction.lengthSq() === 0 || next === direction.length()) return;
+      camera.position.copy(target).add(direction.setLength(next));
+      controls?.update();
+    };
+    fitRef.current = fit;
+    fit();
+    // ponytail: radius is origin-centred and the trigger is size/explode only, so a panned target
+    // is not accounted for; Reset view is the recovery path.
+  }, [size.width, size.height, explode, camera, controls, fitRef]);
 
   return null;
 }
@@ -127,85 +140,28 @@ interface SceneProps {
   explode: number;
   onSelect: (id: PartId) => void;
   controlsRef: React.RefObject<OrbitControlsImpl | null>;
+  fitRef: React.RefObject<(() => void) | null>;
 }
 
-/** Illustrative chip geometry. Dimensions are exaggerated for legibility. */
-function Scene({ selected, hiddenParts, explode, onSelect, controlsRef }: SceneProps) {
-  const hidden = (id: PartId) => hiddenParts.includes(id);
-  const common = { explode, onSelect, selected: false, hidden: false, metal: true };
-
-  const groundBars: Array<{ size: [number, number, number]; position: [number, number, number] }> = [
-    { size: [1.42, 0.02, 0.18], position: [0, -0.012, -0.44] },
-    { size: [1.42, 0.02, 0.18], position: [0, -0.012, 0.44] },
-    { size: [0.28, 0.02, 0.28], position: [-0.57, -0.012, 0.21] },
-    { size: [0.28, 0.02, 0.28], position: [-0.57, -0.012, -0.21] },
-    { size: [0.28, 0.02, 0.62], position: [0.57, -0.012, 0] },
-  ];
-
+function Scene({ selected, hiddenParts, explode, onSelect, controlsRef, fitRef }: SceneProps) {
   return (
     <>
       <ambientLight intensity={0.75} />
       <directionalLight position={[2.5, 3.5, 2]} intensity={1.5} />
       <directionalLight position={[-2, 1.5, -2.5]} intensity={0.5} />
 
-      <Solid
-        {...common}
-        id="substrate"
-        size={[1.62, 0.07, 1.18]}
-        position={[0, -0.058, 0]}
-        explodeY={-0.16}
-        metal={false}
-        selected={selected === 'substrate'}
-        hidden={hidden('substrate')}
-      />
-
-      {groundBars.map((bar, index) => (
+      {PARTS_GEOMETRY.map((part, index) => (
         <Solid
-          {...common}
-          key={`ground-${index}`}
-          id="ground"
-          size={bar.size}
-          position={bar.position}
-          explodeY={0.1}
-          selected={selected === 'ground'}
-          hidden={hidden('ground')}
+          key={`${part.id}-${index}`}
+          {...part}
+          explode={explode}
+          onSelect={onSelect}
+          selected={selected === part.id}
+          hidden={hiddenParts.includes(part.id)}
         />
       ))}
 
-      {[-0.2, 0.2].map((x) => (
-        <Solid
-          {...common}
-          key={`pad-${x}`}
-          id="capacitor"
-          size={[0.34, 0.028, 0.52]}
-          position={[x, 0.002, 0]}
-          explodeY={0.26}
-          selected={selected === 'capacitor'}
-          hidden={hidden('capacitor')}
-        />
-      ))}
-
-      <Solid
-        {...common}
-        id="junction"
-        size={[0.07, 0.034, 0.06]}
-        position={[0, 0.005, 0]}
-        explodeY={0.42}
-        selected={selected === 'junction'}
-        hidden={hidden('junction')}
-      />
-
-      <Solid
-        {...common}
-        id="gate"
-        size={[0.33, 0.022, 0.06]}
-        position={[-0.585, -0.001, 0]}
-        explodeY={0.26}
-        selected={selected === 'gate'}
-        hidden={hidden('gate')}
-      />
-
-      <FitToViewport />
+      <FitToViewport explode={explode} fitRef={fitRef} />
 
       <OrbitControls
         ref={controlsRef}
@@ -220,7 +176,7 @@ function Scene({ selected, hiddenParts, explode, onSelect, controlsRef }: SceneP
   );
 }
 
-interface Viewport3DProps extends Omit<SceneProps, 'controlsRef'> {
+interface Viewport3DProps extends Omit<SceneProps, 'controlsRef' | 'fitRef'> {
   onClearSelection: () => void;
   handleRef: React.RefObject<ViewportHandle | null>;
 }
@@ -234,9 +190,13 @@ export default function Viewport3D({
   handleRef,
 }: Viewport3DProps) {
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
+  const fitRef = useRef<(() => void) | null>(null);
 
   useImperativeHandle(handleRef, () => ({
-    resetView: () => controlsRef.current?.reset(),
+    resetView: () => {
+      controlsRef.current?.reset();
+      fitRef.current?.();
+    },
   }));
 
   useEffect(() => () => {
@@ -257,6 +217,7 @@ export default function Viewport3D({
         explode={explode}
         onSelect={onSelect}
         controlsRef={controlsRef}
+        fitRef={fitRef}
       />
     </Canvas>
   );
