@@ -29,3 +29,7 @@
 .tradeoff.stale svg { opacity: 0.45; pointer-events: none; cursor: default; }
 
 @media (prefers-reduced-motion: reduce) { .tradeoff svg { transition: none; } }
+
+/* Dark ground (results strip): the plot inherits the dock's scoped tokens; only the fills need help. */
+.dock .tradeoff svg { background: var(--surface); }
+.dock .tradeoff-readout .btn { color: var(--text); }

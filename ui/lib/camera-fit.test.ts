@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { fitDistance, fittedDistance, sceneRadius } from './camera-fit.ts';
+import { fitDistance, fitDistanceInRegion, freeRegion, sceneRadius, viewOffset } from './camera-fit.ts';
 import { PARTS_GEOMETRY } from './chip-geometry.ts';
 
 const FOV = 38;
@@ -22,14 +22,37 @@ describe('fitDistance', () => {
   });
 });
 
+describe('fitDistanceInRegion', () => {
+  it('should equal fitDistance when the region is the whole canvas', () => {
+    assert.equal(fitDistanceInRegion(1.3, FOV, 700, 1400, 700), fitDistance(1.3, FOV, 1400, 700));
+  });
+
+  it('should grow when a right-docked card narrows the region', () => {
+    const full = fitDistanceInRegion(1.3, FOV, 700, 1400, 700);
+    const narrowed = fitDistanceInRegion(1.3, FOV, 700, 500, 700);
+    assert.ok(narrowed > full);
+  });
+
+  it('should grow when top and bottom bands shorten the region', () => {
+    const full = fitDistanceInRegion(1.3, FOV, 700, 1400, 700);
+    const shortened = fitDistanceInRegion(1.3, FOV, 700, 1400, 500);
+    assert.ok(shortened > full);
+  });
+
+  it('should be monotone in radius', () => {
+    assert.ok(fitDistanceInRegion(2, FOV, 700, 900, 600) > fitDistanceInRegion(1, FOV, 700, 900, 600));
+  });
+});
+
 describe('sceneRadius', () => {
   it('should be larger exploded than assembled', () => {
     assert.ok(sceneRadius(1, PARTS_GEOMETRY) > sceneRadius(0, PARTS_GEOMETRY));
   });
 
-  it('should match the farthest assembled corner (substrate) plus 5% margin', () => {
-    // substrate: x = 1.62/2, y = -0.058 - 0.07/2, z = 1.18/2
-    const expected = Math.hypot(0.81, 0.093, 0.59) * 1.05;
+  it('should match the farthest assembled corner (package frame) plus 5% margin', () => {
+    const frame = PARTS_GEOMETRY[0];
+    const expected =
+      Math.hypot(frame.size[0] / 2, Math.abs(frame.position[1]) + frame.size[1] / 2, frame.size[2] / 2) * 1.05;
     assert.ok(Math.abs(sceneRadius(0, PARTS_GEOMETRY) - expected) < 1e-12);
   });
 
@@ -43,15 +66,50 @@ describe('sceneRadius', () => {
   });
 });
 
-describe('fittedDistance', () => {
-  it('should keep the current distance when the object already fits (never dollies in)', () => {
-    assert.equal(fittedDistance(5, 3), 5);
-    assert.equal(fittedDistance(3, 3), 3);
+describe('freeRegion', () => {
+  const canvas = { x: 0, y: 0, width: 1400, height: 700 };
+
+  it('should return the whole canvas with no overlays', () => {
+    assert.deepEqual(freeRegion(canvas, []), canvas);
   });
-  it('should dolly out to exactly the required distance when the object would clip', () => {
-    assert.equal(fittedDistance(1.5, 3.33), 3.33);
+
+  it('should trim a right-docked inspector card plus a gap', () => {
+    const card = { x: 936, y: 72, width: 440, height: 500 };
+    const region = freeRegion(canvas, [card]);
+    assert.equal(region.x, 0);
+    assert.equal(region.width, 936 - 24);
+    assert.equal(region.height, 700);
   });
-  it('should leave the camera alone for a degenerate viewport', () => {
-    assert.equal(fittedDistance(2, Number.NaN), 2);
+
+  it('should trim full-width bands at the top and bottom', () => {
+    const top = { x: 0, y: 0, width: 1400, height: 56 };
+    const bottom = { x: 0, y: 652, width: 1400, height: 48 };
+    const region = freeRegion(canvas, [top, bottom]);
+    assert.equal(region.y, 56 + 24);
+    assert.equal(region.height, 652 - 24 - (56 + 24));
+  });
+
+  it('should ignore an overlay that sits outside the canvas (stacked layout)', () => {
+    const below = { x: 0, y: 720, width: 1400, height: 400 };
+    assert.deepEqual(freeRegion(canvas, [below]), canvas);
+  });
+
+  it('should never return a negative size', () => {
+    const huge = { x: 10, y: 0, width: 2000, height: 700 };
+    const region = freeRegion(canvas, [huge]);
+    assert.ok(region.width >= 0 && region.height >= 0);
+  });
+});
+
+describe('viewOffset', () => {
+  const canvas = { x: 0, y: 0, width: 1400, height: 700 };
+
+  it('should be zero for an unobstructed canvas', () => {
+    assert.deepEqual(viewOffset(canvas, canvas), { dx: 0, dy: 0 });
+  });
+
+  it('should shift left when a card occupies the right side', () => {
+    const region = freeRegion(canvas, [{ x: 936, y: 72, width: 440, height: 500 }]);
+    assert.ok(viewOffset(canvas, region).dx < 0);
   });
 });

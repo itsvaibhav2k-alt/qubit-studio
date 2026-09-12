@@ -1,0 +1,68 @@
+/* Components overlay (top-left of the stage, no panel background). Owned by the components-list task. */
+.components { max-width: 240px; display: flex; flex-direction: column; gap: 8px; }
+
+.components-toggle {
+  display: inline-flex; align-items: center; gap: 10px; align-self: flex-start;
+  padding: 0 14px; height: 38px; font-size: 15px; color: var(--text);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: var(--shadow-pill); cursor: pointer;
+}
+.components-toggle svg { color: var(--accent); flex: none; }
+.components-toggle svg:last-child { transition: transform 120ms; }
+.components-toggle[aria-expanded="false"] svg:last-child { transform: rotate(-90deg); }
+.components-toggle:hover { border-color: var(--line-strong); }
+
+.components-crumb {
+  display: flex; align-items: baseline; gap: 6px; font-size: 16px; color: var(--accent);
+  padding-left: 4px; line-height: 1.2;
+}
+.components-crumb .crumb-num { font-family: var(--mono); font-size: 15px; }
+.components-crumb .slash { color: var(--text-3); }
+.components-crumb.none { color: var(--text-2); }
+
+.tree[hidden] { display: none; }
+.tree { display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; }
+.tree-divider { height: 1px; background: var(--line); margin: 6px 4px; }
+.tree-item { display: flex; align-items: center; gap: 2px; }
+
+.tree-row {
+  flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  padding: 4px 6px; border: 0; border-radius: 4px; background: none;
+  text-align: left; color: var(--text); font-size: 14px; cursor: pointer;
+}
+.tree-row:hover { background: var(--surface); }
+.tree-row[aria-selected="true"] { color: var(--accent); font-weight: 600; }
+.tree-row .swatch {
+  width: 18px; height: 18px; border-radius: 3px; flex: none;
+  border: 1px solid rgba(0, 0, 0, 0.22); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+.tree-row .label { flex: 1 1 auto; min-width: 0; }
+.tree-row .tag { font-family: var(--mono); font-size: 10px; color: var(--text-3); font-weight: 400; flex: none; }
+.tree-row.dim .label { color: var(--text-2); }
+.tree-row.dim[aria-selected="true"] .label { color: var(--accent); }
+.tree-row.hidden-part .swatch { opacity: 0.3; }
+.tree-row.hidden-part .label { color: var(--text-3); }
+
+.tree-item .eye {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border: 0; border-radius: 4px; background: none;
+  color: var(--text-2); cursor: pointer; opacity: 0;
+}
+.tree-item:hover .eye, .tree-item:focus-within .eye, .tree-row.hidden-part + .eye { opacity: 1; }
+.tree-item .eye:hover { background: var(--surface); color: var(--text); }
+.tree-item .eye:focus-visible, .tree-row:focus-visible, .components-toggle:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+
+/* Native hidden must win over the flex layout above. */
+.components .tree[hidden] { display: none !important; }
+
+.components { max-width: 208px; }
+.components-toggle { color: var(--accent); border-color: #cbdcf1; box-shadow: none; border-radius: 4px; }
+.components-crumb { font-size: 14px; }
+.tree-row { font-size: 12px; padding: 3px 5px; gap: 8px; }
+.tree-row .tag { display: none; }
+.context-parts { margin-top: 6px; }
+.context-parts summary { color: var(--text-2); font-size: 11px; cursor: pointer; padding: 5px; }
+.context-parts[open] { background: #ffffffed; border-radius: 5px; }
+@media (hover: none) { .tree-item .eye { opacity: 1; } }

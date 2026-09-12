@@ -80,13 +80,14 @@ export default function Schematic({
         island
       </text>
       {locked && (
-        <text x="245" y="62" fontSize="10" textAnchor="middle" fill={ACCENT} fontFamily="ui-monospace, Menlo, monospace">
+        <text x="245" y="62" fontSize="10" textAnchor="middle" fill="#5c6672" fontFamily="ui-monospace, Menlo, monospace">
           f01 locked · EJ and EC linked
         </text>
       )}
 
       {shown('ground') && (
         <g {...pick('ground')}>
+          <rect x="146" y="207" width="202" height="64" fill="transparent" pointerEvents="all" />
           <path d="M150 216 H340" stroke={stroke('ground')} strokeWidth={width('ground')} fill="none" />
           <path
             d="M245 216 V232 M231 232 H259 M236 238 H254 M241 244 H249"
@@ -103,6 +104,7 @@ export default function Schematic({
       {/* Josephson junction branch */}
       {shown('junction') && (
         <g {...pick('junction')}>
+          <rect x="116" y="108" width="106" height="65" fill="transparent" pointerEvents="all" />
           <path d="M196 86 V124 M196 158 V216" stroke={stroke('junction')} strokeWidth={width('junction')} fill="none" />
           <rect
             x="178"
@@ -131,6 +133,7 @@ export default function Schematic({
       {/* shunt capacitor branch */}
       {shown('capacitor') && (
         <g {...pick('capacitor')}>
+          <rect x="267" y="108" width="188" height="65" fill="transparent" pointerEvents="all" />
           <path d="M300 86 V132 M300 150 V216" stroke={stroke('capacitor')} strokeWidth={width('capacitor')} fill="none" />
           <path
             d="M274 132 H326 M274 150 H326"
@@ -150,6 +153,7 @@ export default function Schematic({
       {/* charge gate branch */}
       {shown('gate') && (
         <g {...pick('gate')}>
+          <rect x="34" y="52" width="83" height="166" fill="transparent" pointerEvents="all" />
           <path d="M150 86 H104" stroke={stroke('gate')} strokeWidth={width('gate')} fill="none" />
           <path
             d="M104 68 V104 M90 68 V104"

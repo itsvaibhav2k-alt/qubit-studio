@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { evalReducer, initialEvalState, isStale } from './evaluate-state.ts';
+import { evalReducer, initialEvalState, isStale, statusLabel } from './evaluate-state.ts';
 import type { EvalState } from './evaluate-state.ts';
 import type { DeviceResult } from './types.ts';
 
@@ -82,5 +82,27 @@ describe('isStale', () => {
   it('should be false once the newest response has been applied', () => {
     const state = apply([{ type: 'request', seq: 1 }, { type: 'success', seq: 1, result: result(15) }]);
     assert.equal(isStale(state), false);
+  });
+});
+
+describe('statusLabel', () => {
+  it('should say up to date only for a ready, non-stale result', () => {
+    const live = statusLabel('ready', false, null);
+    assert.equal(live.className, 'live');
+    assert.equal(live.text, 'Live · up to date');
+    assert.match(live.title, /not connected hardware/);
+  });
+
+  it('should say updating while a newer edit is in flight', () => {
+    assert.equal(statusLabel('loading', true, null).text, 'Updating…');
+  });
+
+  it('should distinguish a failed calculation from an unreachable solver', () => {
+    assert.equal(statusLabel('error', false, 'Non-finite eigenvalues; no valid result.').text, 'Calculation failed');
+    assert.equal(statusLabel('error', false, 'Simulation request failed (HTTP 502).').text, 'Solver unreachable');
+  });
+
+  it('should say calculating before the first result', () => {
+    assert.equal(statusLabel('loading', false, null).text, 'Calculating…');
   });
 });

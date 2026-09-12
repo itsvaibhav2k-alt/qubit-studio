@@ -20,7 +20,7 @@ export interface ParamSpec {
 export const PARAMS: Record<ParamKey, ParamSpec> = {
   ej_ghz: {
     key: 'ej_ghz',
-    label: 'Tunnelling strength',
+    label: 'Josephson energy',
     symbol: 'EJ/h',
     unit: 'GHz',
     min: 0.01,
@@ -28,11 +28,11 @@ export const PARAMS: Record<ParamKey, ParamSpec> = {
     step: 0.01,
     fallback: 15,
     digits: 2,
-    meaning: 'Josephson energy. How easily Cooper pairs tunnel across the junction.',
+    meaning: 'Controls Josephson energy in the simplified model.',
   },
   ec_ghz: {
     key: 'ec_ghz',
-    label: 'Charging cost',
+    label: 'Charging energy',
     symbol: 'EC/h',
     unit: 'GHz',
     min: 0.01,
@@ -40,7 +40,7 @@ export const PARAMS: Record<ParamKey, ParamSpec> = {
     step: 0.005,
     fallback: 0.3,
     digits: 3,
-    meaning: 'Charging energy. The energy cost of putting one more Cooper pair on the island.',
+    meaning: 'Controls charging energy in the simplified model.',
   },
   ng: {
     key: 'ng',
@@ -52,7 +52,7 @@ export const PARAMS: Record<ParamKey, ParamSpec> = {
     step: 0.005,
     fallback: 0,
     digits: 3,
-    meaning: 'Static charge bias on the island, in units of one Cooper pair.',
+    meaning: 'Sets the static offset charge on the island in the simplified model.',
   },
   ncut: {
     key: 'ncut',

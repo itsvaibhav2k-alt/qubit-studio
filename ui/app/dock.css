@@ -1,0 +1,140 @@
+/* Results strip. Owned by the dock task. Dark tokens are scoped here so shared components restyle. */
+.dock {
+  --text: #f2f4f5; --text-2: #b9c4c8; --text-3: #8a979c;
+  --line: rgba(255, 255, 255, 0.12); --line-strong: rgba(255, 255, 255, 0.24);
+  --surface: #1b2d33; --surface-2: #203339; --surface-3: #26393f;
+  --accent: #4d9bff; --accent-soft: rgba(77, 155, 255, 0.16);
+  --warn: #e8b465; --warn-soft: rgba(232, 180, 101, 0.14);
+  --bad: #ff8a80; --bad-soft: rgba(255, 138, 128, 0.14);
+  --ok: #5fcf8f;
+  position: relative; z-index: 9; /* above the floating inspector card so the solver popover is not hidden */
+}
+
+/* ---- header row ---- */
+.dock-head {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px;
+  min-height: 40px; padding: 2px 28px; border-bottom: 1px solid var(--line);
+  color: var(--text);
+}
+.dock-title { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; }
+.dock-sep { width: 1px; height: 18px; background: var(--line-strong); margin: 0 10px; }
+.dock-sub { font-size: 14px; color: var(--text-2); }
+.dock-meta {
+  font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-left: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 34vw;
+}
+.dock-head .spacer { flex: 1 1 auto; }
+.dock-act {
+  display: inline-flex; align-items: center; gap: 8px;
+  border: 0; background: none; color: var(--text); font-size: 14px;
+  padding: 6px 12px; border-radius: 6px; white-space: nowrap; cursor: pointer;
+}
+.dock-act:hover:not(:disabled) { background: var(--surface-2); }
+.dock-act:disabled { color: var(--text-3); cursor: default; }
+.dock-act svg { flex: none; }
+.dock-head .pill { max-width: 22vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+.dock-head .btn.primary { margin: 0 6px; }
+
+/* solver settings: pops up over the canvas, not into the strip */
+.dock-solver { position: relative; }
+.dock-solver summary { list-style: none; }
+.dock-solver summary::-webkit-details-marker { display: none; }
+.dock-solver[open] summary { background: var(--surface-2); }
+.dock-pop {
+  position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 20;
+  width: 320px; max-width: calc(100vw - 32px);
+  padding: 12px 14px; border-radius: 8px;
+  background: var(--surface); border: 1px solid var(--line-strong); box-shadow: var(--shadow-card);
+  font-size: 12px; color: var(--text-2);
+}
+.dock-pop .field { margin-top: 0; }
+.dock-pop .num { background: var(--surface-2); color: var(--text); border-color: var(--line-strong); }
+
+/* ---- metrics row ---- */
+.dock-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr 1.35fr;
+  gap: 1px; background: var(--line);
+}
+.metric { background: var(--ink); padding: 14px 24px 12px; min-width: 0; }
+.metric .k { font-size: 17px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+.metric .sym {
+  font-family: var(--mono); font-size: 12px; color: var(--text-2); margin-top: 3px; min-height: 34px;
+  white-space: normal; overflow-wrap: anywhere;
+}
+.metric .v {
+  font-family: var(--mono); font-size: clamp(36px, 3.9vw, 60px); font-weight: 500; line-height: 1.05;
+  letter-spacing: -0.03em; margin-top: 6px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+}
+.metric .v .u { font-size: 24px; color: var(--text-2); letter-spacing: 0; font-weight: 400; }
+.metric .v.none { color: var(--text-3); font-size: 22px; white-space: normal; }
+.metric .d { font-size: 12px; font-family: var(--mono); margin-top: 6px; color: var(--text-2); }
+.metric .d.flat { color: var(--text-3); }
+.metric .note { font-size: 12px; font-family: var(--mono); color: var(--text-3); margin-top: 6px; }
+.metric .ladder { width: 100%; max-width: 400px; display: block; overflow: visible; margin-top: 4px; }
+.metric .ladder text { font-family: var(--mono); }
+.dock .lock { border-color: var(--accent); }
+
+/* ---- expanded lower row ---- */
+.dock-lower {
+  border-top: 1px solid var(--line);
+  padding: 12px 28px 18px;
+}
+.dock-lower.design { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: flex-start; }
+.dock-lower.design .chart { flex: 1 1 480px; min-width: 280px; max-width: 720px; padding: 0; }
+.dock-lower.design .comparison { flex: 1 1 320px; border: 1px solid var(--line); border-radius: 8px; }
+.chart { background: var(--ink); min-width: 0; }
+.dock-lower:not(.design) .chart svg { max-width: 640px; height: 200px; }
+.chart h4 { margin: 0 0 2px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text); font-weight: 600; }
+.chart .cap { font-size: 12px; color: var(--text-2); margin: 0 0 8px; }
+.chart svg { width: 100%; display: block; overflow: visible; }
+.chart svg text { font-family: var(--mono); }
+.chart .explain { font-size: 12px; color: var(--text-2); margin: 8px 0 0; }
+.empty { padding: 18px 0; color: var(--text-3); font-size: 12px; }
+
+/* ---- status ---- */
+.dock .errbox { margin: 10px 28px; color: var(--bad); border-color: var(--bad); }
+.dock .errbox .btn { color: var(--text); }
+.dock-stale { margin: 0; padding: 6px 28px 10px; font-size: 11px; color: var(--warn); }
+
+/* ---- responsive ---- */
+@media (max-width: 1100px) {
+  .dock-grid { grid-template-columns: 1fr 1fr; }
+  .dock-head, .metric, .dock-lower, .dock .errbox, .dock-stale { padding-left: 16px; padding-right: 16px; }
+  .dock-meta { display: none; }
+}
+@media (max-width: 720px) {
+  .dock-grid { grid-template-columns: 1fr; }
+  .metric .v { font-size: 36px; }
+}
+
+.dock-context { position: relative; margin-left: 14px; color: var(--text-2); font-size: 11px; }
+.dock-context summary { cursor: pointer; }
+.dock-context .dock-pop { left: 0; right: auto; }
+.metric .sym { min-height: 22px; font-size: 11px; }
+.metric .ladder { max-width: 330px; height: 96px; }
+.metric { padding: 12px 24px 16px; }
+.metric .v { font-size: clamp(36px, 3.7vw, 56px); margin-top: 4px; }
+.metric .k { font-size: 16px; }
+.metric .note { font-size: 10px; }
+.dock-head { min-height: 42px; }
+@media (min-width:1101px) and (max-height:780px) {
+ .metric { padding: 8px 20px 12px; }
+ .metric .k { font-size: 14px; }
+ .metric .sym { font-size: 10px; min-height: 28px; }
+ .metric .v { font-size: 40px; }
+ .metric .v .u { font-size: 19px; }
+ .metric .ladder { height: 76px; }
+ .dock-act { padding: 5px 9px; font-size: 12px; }
+ .dock-context { margin-left: 6px; font-size: 10px; }
+}
+@media (max-width:720px) {
+ .dock-context { margin-left: 0; }
+ .dock-grid { grid-template-columns: 1fr 1fr; }
+ .metric { padding: 12px; }
+ .metric .v { font-size: 29px; gap: 5px; }
+ .metric .v .u { font-size: 16px; }
+ .metric .k { font-size: 14px; }
+ .dock-head { padding: 8px 12px; }
+ .dock-act { padding: 8px 5px; font-size: 12px; }
+ .metric .ladder { height: 100px; }
+}

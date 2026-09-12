@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import type { ReactNode } from 'react';
 import DesignComparison from './DesignComparison';
 import TradeoffPlot from './TradeoffPlot';
 import { INFEASIBLE_SENTENCE, requirementsSummary, searchRangeSummary } from '@/lib/design-copy';
 import { DASH, delta, dispersionDisplay, num, paramSummary, signed } from '@/lib/format';
+import { ladderY } from '@/lib/ladder';
 import type {
   BaselineAssessment,
   BaselineAssessmentStatus,
@@ -14,6 +15,9 @@ import type {
   SearchCandidate,
   SearchResponse,
 } from '@/lib/search-types';
+import ParamField from './ParamField';
+import { PARAMS } from '@/lib/params';
+import type { ParamKey } from '@/lib/params';
 import type { ChargePoint, DeviceParams, DeviceResult } from '@/lib/types';
 
 export type WorkMode = 'explore' | 'design';
@@ -46,6 +50,12 @@ interface ResultsDockProps {
   stale: boolean;
   error: string | null;
   canPin: boolean;
+  /** Lower row (charts / trade-off / comparison) visible. Owned by the page. */
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  /** Working device, for the solver-settings cutoff field (Explore only). */
+  params: DeviceParams;
+  onChange: (key: ParamKey, value: number) => void;
   onPin: () => void;
   onClearBaseline: () => void;
   onRetry: () => void;
@@ -56,77 +66,127 @@ interface MetricProps {
   label: string;
   symbol?: string;
   badge?: string;
-  value: string;
+  value?: string;
+  unit?: string;
   muted?: boolean;
   note?: string;
   deltaText?: { text: string; tone: 'up' | 'down' | 'flat' } | null;
+  children?: ReactNode;
 }
 
-function Metric({ label, symbol, badge, value, muted, note, deltaText }: MetricProps) {
+function Metric({ label, symbol, badge, value, unit, muted, note, deltaText, children }: MetricProps) {
   return (
     <div className="metric">
       <div className="k">
-        {label} {symbol && <span className="sym">{symbol}</span>}
+        {label}
         {badge && <span className="lock">{badge}</span>}
       </div>
-      <div className={`v${muted ? ' none' : ''}`}>{value}</div>
+      {symbol && (
+        <div className="sym" title={symbol}>
+          {symbol}
+        </div>
+      )}
+      {children ?? (
+        <div className={`v${muted ? ' none' : ''}`}>
+          {value}
+          {unit && <span className="u">{unit}</span>}
+        </div>
+      )}
       {deltaText && <div className={`d ${deltaText.tone}`}>{deltaText.text}</div>}
       {note && <div className="note">{note}</div>}
     </div>
   );
 }
 
-const LEVEL_W = 300;
-const LEVEL_H = 132;
+const ICON = { width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor',
+  strokeWidth: 1.5, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true };
+
+function PinIcon() {
+  return (
+    <svg {...ICON}>
+      <path d="M5 2h6M6 2v4l-2.5 3h9L10 6V2M8 9v5" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg {...ICON}>
+      <circle cx="8" cy="8" r="2.2" />
+      <path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" />
+    </svg>
+  );
+}
+
+function ExpandIcon({ open }: { open: boolean }) {
+  return open ? (
+    <svg {...ICON}>
+      <path d="M13 3L9 7M9 7V4M9 7h3M3 13l4-4M7 9v3M7 9H4" />
+    </svg>
+  ) : (
+    <svg {...ICON}>
+      <path d="M9 3h4v4M13 3L8.5 7.5M7 13H3V9M3 13l4.5-4.5" />
+    </svg>
+  );
+}
+
+const LEVEL_W = 320;
+const LEVEL_H = 96;
+const LEVEL_PAD = 8;
 
 function EnergyLevels({ result, baseline }: { result: DeviceResult; baseline: DeviceResult | null }) {
   const levels = result.levels_ghz;
-  const top = Math.max(...levels, ...(baseline?.levels_ghz ?? [])) || 1;
-  const y = (value: number) => LEVEL_H - 14 - (value / top) * (LEVEL_H - 28);
+  const baseLevels = baseline?.levels_ghz ?? [];
+  // One scale for both ladders so the dashed baseline overlays honestly.
+  const ys = ladderY([...levels, ...baseLevels], LEVEL_H, LEVEL_PAD);
+  const y = ys.slice(0, levels.length);
+  const by = ys.slice(levels.length);
+  const x1 = 36;
+  const x2 = LEVEL_W - 56;
 
   return (
-    <svg viewBox={`0 0 ${LEVEL_W} ${LEVEL_H}`} role="img" aria-label="Energy levels relative to the ground state">
-      {baseline?.levels_ghz.map((value, index) => (
+    <svg
+      className="ladder"
+      viewBox={`0 0 ${LEVEL_W} ${LEVEL_H}`}
+      role="img"
+      aria-label="Energy levels relative to the ground state"
+    >
+      {by.map((value, index) => (
         <line
           key={`b-${index}`}
-          x1="40"
-          x2={LEVEL_W - 8}
-          y1={y(value)}
-          y2={y(value)}
-          stroke="#b7bec8"
+          x1={x1}
+          x2={x2}
+          y1={value}
+          y2={value}
+          stroke="var(--text-3)"
           strokeWidth="1"
           strokeDasharray="4 3"
         />
       ))}
       {levels.map((value, index) => (
         <g key={index}>
-          <line x1="40" x2={LEVEL_W - 60} y1={y(value)} y2={y(value)} stroke="#1b2027" strokeWidth="2" />
-          <text x="32" y={y(value) + 4} fontSize="11" textAnchor="end" fill="#5c6672" fontFamily="ui-monospace, Menlo, monospace">
+          <text x="4" y={y[index] + 4} fontSize="12" fill="var(--text-2)">
             |{index}⟩
           </text>
-          <text x={LEVEL_W - 54} y={y(value) + 4} fontSize="10" fill="#878f9b" fontFamily="ui-monospace, Menlo, monospace">
+          <line
+            x1={x1}
+            x2={x2}
+            y1={y[index]}
+            y2={y[index]}
+            stroke={index === 1 ? 'var(--accent)' : 'var(--text-2)'}
+            strokeWidth={index === 1 ? 2 : 1.2}
+          />
+          <text x={LEVEL_W} y={y[index] + 4} fontSize="12" textAnchor="end" fill="var(--text)">
             {num(value, 3)}
           </text>
         </g>
       ))}
-      {levels.length > 2 && (
-        <>
-          <line x1="62" x2="62" y1={y(levels[0])} y2={y(levels[1])} stroke="#1a6fe0" strokeWidth="1.4" />
-          <text x="68" y={(y(levels[0]) + y(levels[1])) / 2 + 3} fontSize="10" fill="#1a6fe0">
-            f01 {num(result.f01_ghz, 3)} GHz
-          </text>
-          <line x1="62" x2="62" y1={y(levels[1])} y2={y(levels[2])} stroke="#5c6672" strokeWidth="1.4" />
-          <text x="68" y={(y(levels[1]) + y(levels[2])) / 2 + 3} fontSize="10" fill="#5c6672">
-            f12 {num(result.f12_ghz, 3)} GHz
-          </text>
-        </>
-      )}
     </svg>
   );
 }
 
-const CHART_W = 340;
-const CHART_H = 132;
+const CHART_W = 900;
+const CHART_H = 120;
 
 function ChargeResponse({ result, baseline }: { result: DeviceResult; baseline: DeviceResult | null }) {
   const points = result.charge_response;
@@ -148,30 +208,40 @@ function ChargeResponse({ result, baseline }: { result: DeviceResult; baseline: 
   const hi = Math.max(...values);
   const span = hi - lo;
   const pad = span === 0 ? 1 : 0;
-  const x = (ng: number) => 52 + ng * (CHART_W - 68);
-  const y = (khz: number) => CHART_H - 22 - ((khz - lo + pad) / (span + 2 * pad)) * (CHART_H - 40);
+  const x = (ng: number) => 60 + ng * (CHART_W - 76);
+  const y = (khz: number) => CHART_H - 24 - ((khz - lo + pad) / (span + 2 * pad)) * (CHART_H - 42);
   const path = (data: ChargePoint[], ref: number) =>
     data.map((p) => `${x(p.ng)},${y(shiftKhz(p.f01_ghz, ref))}`).join(' ');
 
   return (
-    <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} role="img" aria-label="Transition frequency shift versus offset charge">
-      <line x1="52" x2={CHART_W - 16} y1={CHART_H - 22} y2={CHART_H - 22} stroke="#d2d7de" />
-      <line x1="52" x2="52" y1="10" y2={CHART_H - 22} stroke="#d2d7de" />
+    <svg
+      viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+      role="img"
+      aria-label="Transition frequency shift versus offset charge"
+    >
+      <line x1="60" x2={CHART_W - 16} y1={CHART_H - 24} y2={CHART_H - 24} stroke="var(--line-strong)" />
+      <line x1="60" x2="60" y1="10" y2={CHART_H - 24} stroke="var(--line-strong)" />
       {baseReference !== null && (
-        <polyline points={path(basePoints, baseReference)} fill="none" stroke="#b7bec8" strokeWidth="1.4" strokeDasharray="4 3" />
+        <polyline
+          points={path(basePoints, baseReference)}
+          fill="none"
+          stroke="var(--text-3)"
+          strokeWidth="1.4"
+          strokeDasharray="4 3"
+        />
       )}
-      <polyline points={path(points, reference)} fill="none" stroke="#1a6fe0" strokeWidth="1.8" />
-      <circle cx={x(result.ng)} cy={y(shiftKhz(result.f01_ghz, reference))} r="3.6" fill="#1a6fe0" />
-      <text x="52" y={CHART_H - 8} fontSize="10" fill="#878f9b">
+      <polyline points={path(points, reference)} fill="none" stroke="var(--accent)" strokeWidth="2" />
+      <circle cx={x(result.ng)} cy={y(shiftKhz(result.f01_ghz, reference))} r="4" fill="var(--accent)" />
+      <text x="60" y={CHART_H - 8} fontSize="11" fill="var(--text-3)">
         ng 0
       </text>
-      <text x={CHART_W - 16} y={CHART_H - 8} fontSize="10" textAnchor="end" fill="#878f9b">
+      <text x={CHART_W - 16} y={CHART_H - 8} fontSize="11" textAnchor="end" fill="var(--text-3)">
         1
       </text>
-      <text x="48" y="14" fontSize="10" textAnchor="end" fill="#878f9b" fontFamily="ui-monospace, Menlo, monospace">
+      <text x="54" y="14" fontSize="11" textAnchor="end" fill="var(--text-3)">
         {signed(hi, 3)}
       </text>
-      <text x="48" y={CHART_H - 24} fontSize="10" textAnchor="end" fill="#878f9b" fontFamily="ui-monospace, Menlo, monospace">
+      <text x="54" y={CHART_H - 26} fontSize="11" textAnchor="end" fill="var(--text-3)">
         {signed(lo, 3)}
       </text>
     </svg>
@@ -208,14 +278,16 @@ function TradeoffSlot({ design }: { design: DesignDock }) {
         onInspect={design.onInspect}
       />
       {design.selectionExplanation && <p className="explain">{design.selectionExplanation}</p>}
-      {run.status === 'infeasible' && !design.selectionExplanation && <p className="explain">{INFEASIBLE_SENTENCE}</p>}
+      {run.status === 'infeasible' && !design.selectionExplanation && (
+        <p className="explain">{INFEASIBLE_SENTENCE}</p>
+      )}
       <details className="tech">
         <summary>Search range and settings</summary>
         <div className="body">
           <p style={{ margin: 0 }}>{searchRangeSummary(run.request)}</p>
           <p style={{ margin: '4px 0 0' }}>
-            Selection rule: {run.selection_rule}. Optimality: {run.optimality_scope}. Dispersion reporting floor{' '}
-            {num(run.dispersion_resolution_khz, 3)} kHz.
+            Selection rule: {run.selection_rule}. Optimality: {run.optimality_scope}. Dispersion reporting
+            floor {num(run.dispersion_resolution_khz, 3)} kHz.
           </p>
         </div>
       </details>
@@ -230,13 +302,15 @@ export default function ResultsDock({
   stale,
   error,
   canPin,
+  expanded,
+  onToggleExpanded,
+  params,
+  onChange,
   onPin,
   onClearBaseline,
   onRetry,
   design,
 }: ResultsDockProps) {
-  // ponytail: collapse state is per-mount; persist to localStorage if anyone asks.
-  const [chartsOpen, setChartsOpen] = useState(true);
   const dispersion = dispersionDisplay(result);
   const baselineDispersion = baseline ? dispersionDisplay(baseline) : null;
   const inDesign = mode === 'design' && design !== null;
@@ -244,37 +318,60 @@ export default function ResultsDock({
 
   const headline = () => {
     if (locked && design.run) {
-      return `candidate ${(design.candidateIndex ?? 0) + 1}/${design.candidateCount} · for ${requirementsSummary(design.run.request)}`;
+      const idx = (design.candidateIndex ?? 0) + 1;
+      return `candidate ${idx}/${design.candidateCount} · for ${requirementsSummary(design.run.request)}`;
     }
-    if (result) return paramSummary(result);
+    if (result) return `${paramSummary(result)} · EJ/EC ${num(result.ratio, 1)}`;
     return error ? 'no completed calculation' : 'waiting for first result';
   };
 
   return (
     <>
-      <div className="panel-head">
-        Results
-        <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-3)' }}>
-          {headline()}
-        </span>
+      <div className="dock-head">
+        <span className="dock-title">Results</span>
+        <span className="dock-sep" aria-hidden />
+        <span className="dock-sub">Illustrative values</span>
+        <details className="dock-context"><summary>Calculation details</summary><div className="dock-pop">{headline()}</div></details>
         <span className="spacer" />
         {baseline && !inDesign && (
           <span className="pill" title={paramSummary(baseline)}>
             baseline: {paramSummary(baseline)}
           </span>
         )}
+        {baseline && (
+          <button type="button" className="dock-act" onClick={onClearBaseline}>
+            Clear
+          </button>
+        )}
         <button
           type="button"
-          className="btn"
+          className="dock-act"
           onClick={onPin}
           disabled={!canPin}
           title={canPin ? 'Freeze the current completed result for comparison' : 'Available once a calculation has completed'}
         >
+          <PinIcon />
           Pin baseline
         </button>
-        <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>
-          Clear
-        </button>
+        <details className="dock-solver">
+          <summary className="dock-act">
+            <GearIcon />
+            Solver settings
+          </summary>
+          <div className="dock-pop">
+            {inDesign ? (
+              <p style={{ margin: 0 }}>
+                Design searches use the charge basis cutoff under Requirements → Design settings. The working
+                device’s own cutoff is unchanged until you apply a design.
+              </p>
+            ) : (
+              <>
+                <ParamField paramKey="ncut" value={params.ncut} onChange={onChange} />
+                <p style={{ margin: '8px 0 0' }}>{PARAMS.ncut.meaning}</p>
+              </>
+            )}
+          </div>
+        </details>
         {inDesign && (
           <button
             type="button"
@@ -292,12 +389,13 @@ export default function ResultsDock({
         )}
         <button
           type="button"
-          className="btn"
-          aria-expanded={chartsOpen}
-          onClick={() => setChartsOpen((open) => !open)}
-          title={chartsOpen ? 'Hide the charts, keep the metrics' : 'Show the charts'}
+          className="dock-act"
+          aria-expanded={expanded}
+          onClick={onToggleExpanded}
+          title={expanded ? 'Hide the charts, keep the metrics' : 'Show the charts'}
         >
-          Charts {chartsOpen ? '▾' : '▸'}
+          <ExpandIcon open={expanded} />
+          {expanded ? 'Collapse results' : 'Expand results'}
         </button>
       </div>
 
@@ -317,32 +415,25 @@ export default function ResultsDock({
           label="Transition frequency"
           symbol="f01"
           badge={locked ? 'locked' : undefined}
-          value={result ? `${num(result.f01_ghz, 4)} GHz` : DASH}
+          value={result ? num(result.f01_ghz, 3) : DASH}
+          unit={result ? 'GHz' : undefined}
           muted={!result}
           deltaText={delta(result?.f01_ghz, baseline?.f01_ghz, 4, 'GHz')}
         />
-        {inDesign ? (
-          <Metric
-            label="Separation"
-            symbol="A = f01 − f12"
-            value={result ? `${signed(result.anharmonicity_mhz, 1)} MHz` : DASH}
-            muted={!result}
-            note={result ? `α = ${signed(result.alpha_mhz, 1)} MHz` : undefined}
-            deltaText={delta(result?.anharmonicity_mhz, baseline?.anharmonicity_mhz, 1, 'MHz')}
-          />
-        ) : (
-          <Metric
-            label="Anharmonicity"
-            symbol="α = f12 − f01"
-            value={result ? `${signed(result.alpha_mhz, 1)} MHz` : DASH}
-            muted={!result}
-            deltaText={delta(result?.alpha_mhz, baseline?.alpha_mhz, 1, 'MHz')}
-          />
-        )}
         <Metric
-          label="Charge variation"
-          symbol="|f01(½) − f01(0)|"
-          value={dispersion.text}
+          label="Transition-spacing difference A"
+          symbol="A = f01 − f12"
+          value={result ? signed(result.anharmonicity_mhz, 1) : DASH}
+          unit={result ? 'MHz' : undefined}
+          muted={!result}
+          note={result ? `α = f12 − f01 = ${signed(result.alpha_mhz, 1)} MHz` : undefined}
+          deltaText={delta(result?.anharmonicity_mhz, baseline?.anharmonicity_mhz, 1, 'MHz')}
+        />
+        <Metric
+          label="Charge dispersion"
+          symbol="Peak-to-peak variation · |f01(½) − f01(0)|"
+          value={dispersion.resolved ? num(result?.dispersion_khz, 3) : dispersion.text}
+          unit={dispersion.resolved ? 'kHz' : undefined}
           muted={!result || !dispersion.resolved}
           note={dispersion.note}
           deltaText={
@@ -351,50 +442,57 @@ export default function ResultsDock({
               : null
           }
         />
-        <Metric
-          label="Energy ratio"
-          symbol="EJ/EC"
-          value={result ? num(result.ratio, 1) : DASH}
-          muted={!result}
-          deltaText={delta(result?.ratio, baseline?.ratio, 1, '')}
-        />
+        <Metric label="Energy levels" symbol="Relative to ground · GHz">
+          {result ? (
+            <EnergyLevels result={result} baseline={baseline} />
+          ) : (
+            <div className="v none">
+              {error ? 'No levels — the last calculation did not complete.' : 'Waiting for the calculation…'}
+            </div>
+          )}
+        </Metric>
       </div>
 
-      {chartsOpen && (
-        <div className="dock-lower">
-          <div className="chart">
-            <h4>Energy levels</h4>
-            <p className="cap">Relative to the ground state, GHz. Dashed = pinned baseline.</p>
-            {result ? <EnergyLevels result={result} baseline={baseline} /> : <p className="empty">{error ? 'No levels — the last calculation did not complete.' : 'Waiting for the calculation…'}</p>}
-          </div>
+      {expanded && (
+        <div className={`dock-lower${inDesign ? ' design' : ''}`}>
           {inDesign ? (
-            <TradeoffSlot design={design} />
+            <>
+              <TradeoffSlot design={design} />
+              {design.baseline && (
+                <DesignComparison
+                  comparison={design.comparison}
+                  baseline={design.baseline}
+                  assessmentStatus={design.assessmentStatus}
+                  assessment={design.assessment}
+                  assessmentError={design.assessmentError}
+                  onRetryAssessment={design.onRetryAssessment}
+                />
+              )}
+            </>
           ) : (
             <div className="chart">
               <h4>Charge response</h4>
               <p className="cap">
-                Shift of f01 in kHz from its own value at ng 0{result ? ` (${num(result.charge_response[0]?.f01_ghz ?? Number.NaN, 6)} GHz, ${result.charge_response.length} solver points)` : ''}.
-                Dashed = pinned baseline, against its own ng 0.
+                Shift of f01 in kHz from its own value at ng 0
+                {result
+                  ? ` (${num(result.charge_response[0]?.f01_ghz ?? Number.NaN, 6)} GHz, ${result.charge_response.length} solver points)`
+                  : ''}
+                . Dashed = pinned baseline, against its own ng 0.
               </p>
-              {result ? <ChargeResponse result={result} baseline={baseline} /> : <p className="empty">{error ? 'No curve — nothing is interpolated locally.' : 'Waiting for the first calculation…'}</p>}
+              {result ? (
+                <ChargeResponse result={result} baseline={baseline} />
+              ) : (
+                <p className="empty">
+                  {error ? 'No curve — nothing is interpolated locally.' : 'Waiting for the first calculation…'}
+                </p>
+              )}
             </div>
           )}
         </div>
       )}
 
-      {inDesign && design.baseline && (
-        <DesignComparison
-          comparison={design.comparison}
-          baseline={design.baseline}
-          assessmentStatus={design.assessmentStatus}
-          assessment={design.assessment}
-          assessmentError={design.assessmentError}
-          onRetryAssessment={design.onRetryAssessment}
-        />
-      )}
-
-      {stale && (
-        <p style={{ margin: 0, padding: '6px 12px 10px', fontSize: 11, color: 'var(--warn)' }}>
+      {stale && result && (
+        <p className="dock-stale">
           Updating — the values above still describe {result ? paramSummary(result) : 'the previous parameters'}.
         </p>
       )}

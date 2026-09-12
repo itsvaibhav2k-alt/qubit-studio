@@ -20,3 +20,8 @@
 .comparison .cmp-msg { flex: 1 1 240px; }
 .comparison .cmp-changed { color: var(--text-3); }
 .comparison .btn { font-size: 11px; transition: background 120ms, color 120ms; }
+
+/* Dark ground (results strip): pills carry hard-coded light fills in globals; neutralise them. */
+.dock .comparison .pill.ok { background: transparent; border-color: var(--ok); }
+.dock .comparison .pill.no { background: transparent; border-color: var(--bad); }
+.dock .comparison .btn { color: var(--text); }

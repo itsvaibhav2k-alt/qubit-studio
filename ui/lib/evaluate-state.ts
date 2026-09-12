@@ -50,3 +50,28 @@ export function evalReducer(state: EvalState, event: EvalEvent): EvalState {
 export function isStale(state: EvalState): boolean {
   return state.status === 'loading' && state.appliedSeq !== state.seq;
 }
+
+export interface StatusLabel {
+  /** CSS class suffix used by the status pill and browser QA. */
+  className: 'live' | 'stale' | 'err' | '';
+  text: string;
+  /** Tooltip. Freshness of the calculation only; nothing here is connected hardware. */
+  title: string;
+}
+
+const FRESHNESS = 'Describes the solver calculation, not connected hardware.';
+
+/** Status pill copy. "Live" means the numbers on screen answer the current parameters. */
+export function statusLabel(status: EvalStatus, stale: boolean, error: string | null): StatusLabel {
+  if (error) {
+    const connectivity = /fetch|network|unreachable|ECONNREFUSED|timed out|502|503/i.test(error);
+    return {
+      className: 'err',
+      text: connectivity ? 'Solver unreachable' : 'Calculation failed',
+      title: `${error} ${FRESHNESS}`,
+    };
+  }
+  if (stale) return { className: 'stale', text: 'Updating…', title: `Recalculating for the latest edit. ${FRESHNESS}` };
+  if (status === 'ready') return { className: 'live', text: 'Live · up to date', title: `Results match the current parameters. ${FRESHNESS}` };
+  return { className: '', text: 'Calculating…', title: `Waiting for the first result. ${FRESHNESS}` };
+}

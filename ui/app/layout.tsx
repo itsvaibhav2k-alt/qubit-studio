@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './components-list.css';
+import './inspector.css';
+import './dock.css';
 import './requirements.css';
 import './tradeoff.css';
 import './comparison.css';
