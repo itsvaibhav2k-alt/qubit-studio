@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import MathText from '@/components/MathText';
 import { PARAMS, clampParam } from '@/lib/params';
 import type { ParamKey } from '@/lib/params';
 
@@ -10,10 +11,11 @@ interface ParamFieldProps {
   onChange: (key: ParamKey, value: number) => void;
   disabled?: boolean;
   label?: string;
+  tourId?: string;
 }
 
 /** Slider plus exact numeric entry. Out-of-range text is rejected, not silently clamped. */
-export default function ParamField({ paramKey, value, onChange, disabled = false, label }: ParamFieldProps) {
+export default function ParamField({ paramKey, value, onChange, disabled = false, label, tourId }: ParamFieldProps) {
   const spec = PARAMS[paramKey];
   const displayLabel = label ?? spec.label;
   const [text, setText] = useState(value.toFixed(spec.digits));
@@ -53,10 +55,10 @@ export default function ParamField({ paramKey, value, onChange, disabled = false
   const atDefault = value === spec.fallback;
 
   return (
-    <div className="field">
+    <div className="field" data-tour={tourId}>
       <div className="field-head">
         <label htmlFor={`p-${paramKey}`}>{displayLabel}</label>
-        <span className="sym">{spec.symbol}</span>
+        <span className="sym"><MathText math={spec.symbol} /></span>
         <button
           type="button"
           className="reset"

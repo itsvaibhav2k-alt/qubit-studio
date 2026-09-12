@@ -1,6 +1,7 @@
 import { PART_BY_ID, type PartId } from './parts.ts';
 import { MATERIAL_RECORDS } from './material-records.ts';
-import { MATERIAL_BY_ID, type ComponentMaterials } from './component-materials.ts';
+import type { ComponentMaterials } from './component-materials.ts';
+import { parseComponentMaterials } from './component-material-selection.ts';
 import type { DesignGoals, DeviceParams, DeviceResult } from './types.ts';
 import type { ChipSnapshot, SnapshotExperiment, SnapshotMaterials, SnapshotOutputs } from './insight-types.ts';
 
@@ -54,6 +55,7 @@ export function snapshotMaterials(selection: { topMaterial: string; baseMaterial
 export function buildChipSnapshot(input: {
   params: DeviceParams; result: DeviceResult | null; baseline: DeviceResult | null;
   selected: PartId | null; stale: boolean; error: string | null;
+  explode?: number;
   goals?: DesignGoals; materials?: { topMaterial: string; baseMaterial: string };
   componentMaterials?: ComponentMaterials;
   experiments?: Array<Omit<SnapshotExperiment, 'freshness'> & { current: boolean }>;
@@ -62,6 +64,7 @@ export function buildChipSnapshot(input: {
   const ready = matching && !input.stale && !input.error;
   return {
     selected_part: input.selected,
+    ...(input.explode === undefined ? {} : { view_explode: input.explode }),
     params: { ej_ghz: input.params.ej_ghz, ec_ghz: input.params.ec_ghz, ng: input.params.ng,
       ncut: input.params.ncut, ratio: input.params.ej_ghz / input.params.ec_ghz },
     outputs: ready ? outputsFromResult(input.result!) : null,
@@ -121,19 +124,6 @@ function parseEvidenceMap(raw: unknown, nullable: boolean): Record<string, numbe
   return parsed;
 }
 
-/** Only canonical appearance IDs are accepted; arbitrary text cannot enter this context. */
-function parseRenderedComponentMaterials(raw: unknown): ComponentMaterials | null {
-  if (!isObject(raw) || Object.keys(raw).length !== PART_IDS.size) return null;
-  const entries: Array<[PartId, string]> = [];
-  for (const part of PART_IDS) {
-    if (!Object.hasOwn(raw, part)) return null;
-    const material = raw[part];
-    if (typeof material !== 'string' || !Object.hasOwn(MATERIAL_BY_ID, material)) return null;
-    entries.push([part, material]);
-  }
-  return Object.fromEntries(entries) as ComponentMaterials;
-}
-
 export function parseChipSnapshot(body: unknown): { ok: true; snapshot: ChipSnapshot } | { ok: false; error: string } {
   const invalid = (error: string) => ({ ok: false as const, error });
   if (!isObject(body)) return invalid('Snapshot must be a JSON object.');
@@ -157,8 +147,9 @@ export function parseChipSnapshot(body: unknown): { ok: true; snapshot: ChipSnap
     materials = snapshotMaterials({ topMaterial: body.materials.topMaterial, baseMaterial: body.materials.baseMaterial });
   }
   const componentMaterials = body.rendered_component_materials === undefined
-    ? undefined : parseRenderedComponentMaterials(body.rendered_component_materials);
+    ? undefined : parseComponentMaterials(body.rendered_component_materials);
   if (componentMaterials === null) return invalid('Snapshot rendered component materials must assign a known appearance to all seven parts.');
+  if (body.view_explode !== undefined && !numberIn(body.view_explode, 0, 1)) return invalid('Snapshot view context is invalid.');
   let experiments: SnapshotExperiment[] | undefined;
   if (body.experiments !== undefined) {
     if (!Array.isArray(body.experiments) || body.experiments.length > 4) return invalid('Snapshot supports at most four completed experiments.');
@@ -180,7 +171,7 @@ export function parseChipSnapshot(body: unknown): { ok: true; snapshot: ChipSnap
     selected_part: body.selected_part as PartId | null, params: { ...params, ratio: body.params.ratio }, outputs, baseline,
     readiness: body.readiness as ChipSnapshot['readiness'], stale: body.stale,
     error: body.error ? 'The current solver calculation failed.' : null,
-    ...(goals ? { goals } : {}), ...(materials ? { materials } : {}), ...(experiments ? { experiments } : {}),
+    ...(body.view_explode === undefined ? {} : { view_explode: body.view_explode as number }), ...(goals ? { goals } : {}), ...(materials ? { materials } : {}), ...(experiments ? { experiments } : {}),
     ...(componentMaterials ? { rendered_component_materials: componentMaterials } : {}),
   } };
 }

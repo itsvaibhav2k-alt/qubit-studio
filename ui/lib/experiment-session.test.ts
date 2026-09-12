@@ -16,7 +16,7 @@ const metric = (ej = 15, ec = 0.3, ng = 0, f = 5) => ({
   ej_ghz: ej, ec_ghz: ec, ng, ratio: ej/ec, raw_levels_ghz: [-10, -5, -0.3, 4.1],
   levels_ghz: [0, f, 2*f-0.3, 3*f-0.9], f01_ghz: f, f12_ghz: f-0.3,
   alpha_mhz: -300, anharmonicity_mhz: 300, dispersion_khz: 1,
-  dispersion_status: 'resolved', dispersion_upper_khz: 1.001,
+  dispersion_status: 'resolved' as const, dispersion_upper_khz: 1.001,
 });
 const full = (p = context().params) => ({ ...metric(p.ej_ghz, p.ec_ghz, p.ng), ...p,
   model: 'isolated-transmon', model_version: 'v1', dispersion_resolution_khz: 0.001,
@@ -178,4 +178,51 @@ test('stress response must echo nominal inputs, cover nine distinct corners, and
   assert.throws(() => parseExperimentResult('stress', duplicate, snapshot));
   const wrongNominal = structuredClone(response); wrongNominal.nominal.ng = 0;
   assert.throws(() => parseExperimentResult('stress', wrongNominal, snapshot));
+});
+
+test('inspecting an exact alternative persists separately from the recommendation and rejects forged/stale choices', async () => {
+  const h = harness(); const running = h.store.run('search');
+  const response = search(h.pending[0].payload);
+  const alternative = { ...response.selected, ...metric(16.123456789, .3123456789) };
+  response.candidates[1] = alternative;
+  h.succeed(0, response); await running;
+  const view = h.store.view();
+  view.chooseCandidate(alternative);
+  assert.equal(h.store.view().search.result?.selected?.ej_ghz, 15);
+  assert.deepEqual(h.store.getApply('search'), { ej_ghz: alternative.ej_ghz, ec_ghz: alternative.ec_ghz, ng: 0, ncut: 40 });
+  view.chooseCandidate({ ...alternative, ej_ghz: 17 });
+  assert.equal(h.store.view().chosenCandidate?.ej_ghz, alternative.ej_ghz);
+  const edited = { ...context(), goals: { ...context().goals, target_ghz: 6 } };
+  assert.equal(h.store.view(edited).getApply('search'), null);
+  h.store.updateContext(edited);
+  view.chooseCandidate(response.selected);
+  assert.equal(h.store.view().chosenCandidate?.ej_ghz, alternative.ej_ghz);
+  assert.equal(view.getApply('search'), null);
+  assert.equal(h.store.view().evidence[0].summary.chosen_ej_ghz, alternative.ej_ghz);
+  assert.equal(h.store.view().evidence[0].current, false);
+});
+
+test('material alternatives are validated against the producing ranking and stale callbacks cannot change them', async () => {
+  const h = harness(); const running = h.store.run('search'); h.succeed(0); await running;
+  const view = h.store.view();
+  view.chooseMaterial('al-si-burnett-2018');
+  assert.deepEqual(h.store.view().getSearchMaterials(), { topMaterial: 'Al', baseMaterial: 'Si' });
+  view.chooseMaterial('fabricated-stack');
+  assert.equal(h.store.view().chosenMaterialId, 'al-si-burnett-2018');
+  view.setControls({ materialPriority: 0 });
+  view.chooseMaterial('tin-sapphire-gao-2021');
+  assert.equal(h.store.view().chosenMaterialId, 'al-si-burnett-2018');
+  assert.equal(view.getSearchMaterials(), null);
+});
+
+test('a new same-context search invalidates an asynchronous export of the previous result', async () => {
+  const h = harness(); const first = h.store.run('search'); h.succeed(0); await first;
+  const view = h.store.view(), producing = view.search.result!;
+  assert.equal(view.isCurrentSearch(producing), true);
+  const second = h.store.run('search');
+  assert.equal(view.isCurrentSearch(producing), false);
+  h.succeed(1); await second;
+  assert.deepEqual(view.getApply('search'), h.store.getApply('search'));
+  assert.equal(view.isCurrentSearch(producing), false);
+  assert.equal(h.store.view().isCurrentSearch(h.store.view().search.result!), true);
 });

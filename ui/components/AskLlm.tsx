@@ -1,6 +1,9 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import MylaIcon from '@/components/MylaIcon';
+import MathText from '@/components/MathText';
+import { composeLocalMyla } from '@/lib/explain-local';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -45,7 +48,7 @@ export default function AskLlm({ open, onOpenChange, topics, snapshot, explain }
           if (opener.current?.isConnected) { event.preventDefault(); opener.current.focus(); }
         }}>
         <DialogHeader>
-          <DialogTitle>{headline}</DialogTitle>
+          <DialogTitle><span className="myla-head"><MylaIcon size={28} />Myla · <MathText text={headline} /></span></DialogTitle>
           <DialogDescription>Ask Gemini about the completed calculation and selected evidence.</DialogDescription>
           <div className="text-sm text-muted-foreground mt-1">
             {topics.length > 0 ? (
@@ -68,17 +71,20 @@ export default function AskLlm({ open, onOpenChange, topics, snapshot, explain }
           </div>
         </DialogHeader>
 
+        {canAsk && topics.length > 0 && <details className="tech" open><summary>Local teaching notes · no AI request</summary>
+          {topics.map(topic => <article key={topic} className="ask-answer"><h4>{TOPICS[topic].label}</h4><MathText text={composeLocalMyla(topic, snapshot).body} /></article>)}
+        </details>}
         {loading && <p className="ask-status" role="status">Asking Gemini to explain selected sections…</p>}
         {error && <p className="insight-error" role="alert">{error}</p>}
         {answer && (
           <article className="ask-answer">
-            <h4 className="text-base font-semibold mb-2">{answer.title}</h4>
+            <h4 className="text-base font-semibold mb-2"><MathText text={answer.title} /></h4>
             {answer.body
               .split('\n')
               .filter(Boolean)
               .map((para, index) => (
                 <p key={index} className="mb-2 text-sm leading-relaxed">
-                  {para}
+                  <MathText text={para} />
                 </p>
               ))}
           </article>
@@ -88,7 +94,7 @@ export default function AskLlm({ open, onOpenChange, topics, snapshot, explain }
         )}
 
         <div className="ask-dialog-actions mt-4 flex justify-end gap-2">
-          {loading && <Button type="button" variant="outline" size="sm" onClick={cancel}>Cancel</Button>}
+        {loading && <Button type="button" variant="outline" size="sm" onClick={cancel}>Cancel</Button>}
           <Button type="button" variant={answer ? 'outline' : 'default'} size="sm" onClick={ask} disabled={!canAsk || loading}>
             {error ? 'Retry' : answer ? 'Ask again' : 'Ask Gemini'}
           </Button>

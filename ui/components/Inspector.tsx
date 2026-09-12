@@ -1,5 +1,6 @@
 'use client';
 
+import GeometryEditor from './GeometryEditor';
 import { useState } from 'react';
 import ParamField from './ParamField';
 import MaterialSensitivity from './MaterialSensitivity';
@@ -212,6 +213,7 @@ export default function Inspector({
       )}
 
       {tab === 'edit' && <div className="insp-section quiet-section">
+          <GeometryEditor key={`${params.ej_ghz}-${params.ec_ghz}`} params={params} onApply={(ej_ghz, ec_ghz) => onApplyMaterialScenario({ ...params, ej_ghz, ec_ghz })} />
           <details className="tech">
             <summary>Advanced solver setting</summary>
             <div className="body">

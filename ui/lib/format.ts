@@ -70,5 +70,5 @@ export function delta(
 /** Compact one-line description of the parameters a displayed result came from. */
 export function paramSummary(result: Pick<DeviceResult, 'ej_ghz' | 'ec_ghz' | 'ng' | 'ncut'> | null): string {
   if (!result) return DASH;
-  return `EJ ${num(result.ej_ghz, 2)} GHz · EC ${num(result.ec_ghz, 3)} GHz · ng ${num(result.ng, 3)} · ncut ${result.ncut}`;
+  return `$E_J$ ${num(result.ej_ghz, 2)} GHz · $E_C$ ${num(result.ec_ghz, 3)} GHz · $n_g$ ${num(result.ng, 3)} · $n_{\\mathrm{cut}}$ ${result.ncut}`;
 }

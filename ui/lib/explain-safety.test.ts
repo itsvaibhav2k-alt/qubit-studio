@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { buildChipSnapshot, parseChipSnapshot } from './insight-snapshot.ts';
 import { buildExplainUserPrompt, EXPLAIN_SYSTEM_PROMPT, parseExplainJson } from './explain-llm.ts';
-import { topicNumbers } from './explain-topics.ts';
+import { topicNumbers, TOPIC_IDS } from './explain-topics.ts';
 import { createExplainHandler, MAX_EXPLAIN_BODY_BYTES } from './explain-handler.ts';
 import { ExplainRequest } from './explain-request.ts';
 import type { DeviceResult } from './types.ts';
@@ -151,7 +151,7 @@ describe('bounded explain route with injected mock provider', () => {
     const handler = createExplainHandler({ configured: () => true, explain: async () => { calls++; return answer; } });
     const bodies = [[], {}, { ...validBody(), topics: [] }, { ...validBody(), topics: ['invented'] },
       { ...validBody(), snapshot: { ...snapshot(), rendered_component_materials: { ...DEFAULT_COMPONENT_MATERIALS, package: 'not-a-material' } } },
-      { ...validBody(), topics: Array(13).fill('junction') }, { ...validBody(), snapshot: { ...snapshot(), readiness: 'pending', outputs: null, stale: true } }];
+      { ...validBody(), topics: Array(TOPIC_IDS.length + 1).fill('junction') }, { ...validBody(), snapshot: { ...snapshot(), readiness: 'pending', outputs: null, stale: true } }];
     for (const body of bodies) assert.ok((await handler(request(body))).status >= 400);
     assert.equal((await handler(new Request('http://local', { method: 'POST', body: '{' }))).status, 400);
     assert.equal((await handler(request('x'.repeat(MAX_EXPLAIN_BODY_BYTES)))).status, 413);

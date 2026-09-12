@@ -1,6 +1,6 @@
-import type { DesignGoals, DeviceParams, SearchResult, StressResult, TunableResult, MaterialScenarioResult } from './types.ts';
+import type { DesignGoals, DeviceParams, SearchCandidate, SearchResult, StressResult, TunableResult, MaterialScenarioResult } from './types.ts';
 import { validDeviceParams, validDeviceResult } from './device-snapshot.ts';
-import { recommendMaterialStack } from './material-ranking.ts';
+import { DEFAULT_MATERIAL_PRIORITY, rankMaterialStacks } from './material-ranking.ts';
 import type { SubstratePreference } from './material-ranking.ts';
 
 export type ExperimentKind = 'search' | 'stress' | 'tunable' | 'material';
@@ -36,11 +36,16 @@ export interface ExperimentSession {
   setControls(patch: Partial<ExperimentControls>): void;
   run(kind: ExperimentKind): Promise<void>;
   getApply(kind: 'search' | 'material'): DeviceParams | null;
+  isCurrentSearch(result: SearchResult): boolean;
+  chosenCandidate: SearchCandidate | null;
+  chosenMaterialId: string | null;
+  chooseCandidate(candidate: SearchCandidate): void;
+  chooseMaterial(id: string): void;
   getSearchMaterials(): { topMaterial: string; baseMaterial: string } | null;
 }
 
 export const DEFAULT_EXPERIMENT_CONTROLS: ExperimentControls = {
-  variation: 5, flux: 0.25, asymmetry: 0.1, materialPriority: 65,
+  variation: 5, flux: 0.25, asymmetry: 0.1, materialPriority: DEFAULT_MATERIAL_PRIORITY,
   substratePreference: 'any', junctionFactor: 0.9, capacitanceFactor: 1.1,
 };
 const KINDS: ExperimentKind[] = ['search', 'stress', 'tunable', 'material'];
@@ -193,6 +198,8 @@ export function parseExperimentResult<K extends ExperimentKind>(kind: K, value: 
 type Cell = { status: ExperimentStatus; result: ExperimentResults[ExperimentKind] | null; snapshot: ExperimentSnapshot | null;
   generation: number; completedGeneration: number; error: string | null };
 export class ExperimentSessionStore {
+  private chosenCandidate: SearchCandidate | null = null;
+  private chosenMaterialId: string | null = null;
   private context: ExperimentContext;
   private controls: ExperimentControls = { ...DEFAULT_EXPERIMENT_CONTROLS };
   private cells: Record<ExperimentKind, Cell>;
@@ -250,6 +257,7 @@ export class ExperimentSessionStore {
       if (!response.ok) throw new Error(`The experiment could not be completed (HTTP ${response.status}). Check the inputs and retry.`);
       const result = parseExperimentResult(kind, await response.json(), snapshot);
       if (!this.active || controller.signal.aborted || this.cells[kind].generation !== generation) return;
+      if (kind === 'search') { this.chosenCandidate = null; this.chosenMaterialId = null; }
       this.cells[kind] = { status: 'ready', result, snapshot, generation, completedGeneration: generation, error: null }; this.emit();
     } catch (error) {
       if (!this.active || controller.signal.aborted || this.cells[kind].generation !== generation) return;
@@ -260,22 +268,40 @@ export class ExperimentSessionStore {
     if (key(context) !== key(this.context)) return null;
     const record = this.record(kind, context);
     if (!record.current || !record.result || !record.snapshot) return null;
-    const result = kind === 'search' ? (record.result as SearchResult).selected : (record.result as MaterialScenarioResult).modified;
+    const result = kind === 'search' ? (this.chosenCandidate ?? (record.result as SearchResult).selected) : (record.result as MaterialScenarioResult).modified;
     if (!result) return null;
     const params = { ej_ghz: result.ej_ghz, ec_ghz: result.ec_ghz, ng: result.ng,
       ncut: kind === 'search' ? record.snapshot.params.ncut : (result as MaterialScenarioResult['modified']).ncut };
     return validDeviceParams(params) && (kind !== 'search' || (result as SearchResult['selected'])?.feasible) ? params : null;
   }
+  chooseCandidate(candidate: SearchCandidate, context = this.context) {
+    const search = this.record('search', context);
+    if (key(context) !== key(this.context) || !search.current || !search.result) return;
+    const exact = search.result.candidates.find(item => key(item) === key(candidate));
+    if (!exact?.feasible || exact.ng !== 0 || Math.abs(exact.f01_ghz - context.goals.target_ghz) > 1e-9) return;
+    this.chosenCandidate = copy(exact); this.emit();
+  }
+  chooseMaterial(id: string, context = this.context) {
+    const search = this.record('search', context);
+    if (key(context) !== key(this.context) || !search.current || !search.snapshot) return;
+    const stacks = rankMaterialStacks(search.snapshot.controls.materialPriority!, search.snapshot.controls.substratePreference!);
+    if (!stacks.some(stack => stack.id === id)) return;
+    this.chosenMaterialId = id; this.emit();
+  }
   view(context = this.context): ExperimentSession {
     const search = this.record('search', context), stress = this.record('stress', context);
     const tunable = this.record('tunable', context), material = this.record('material', context);
     return { controls: copy(this.controls), search, stress, tunable, material,
+      isCurrentSearch: result => { const record = this.record('search', context); return record.current && record.result === result && key(context) === key(this.context); },
+      chosenCandidate: this.chosenCandidate ?? search.result?.selected ?? null, chosenMaterialId: this.chosenMaterialId,
+      chooseCandidate: candidate => this.chooseCandidate(candidate, context), chooseMaterial: id => this.chooseMaterial(id, context),
       validationError: (kind) => validateExperiment(kind, context, this.controls),
       setControls: this.setControls, run: (kind) => this.run(kind, context),
       getApply: (kind) => this.getApply(kind, context),
       getSearchMaterials: () => {
         if (!this.getApply('search', context) || !search.snapshot) return null;
-        const stack = recommendMaterialStack(search.snapshot.controls.materialPriority!, search.snapshot.controls.substratePreference!);
+        const stacks = rankMaterialStacks(search.snapshot.controls.materialPriority!, search.snapshot.controls.substratePreference!);
+        const stack = stacks.find(item => item.id === this.chosenMaterialId) ?? stacks[0];
         return { topMaterial: stack.material, baseMaterial: stack.substrate };
       },
       evidence: KINDS.flatMap((kind) => {
@@ -294,6 +320,9 @@ export class ExperimentSessionStore {
           const r = record.result as SearchResult; model = r.model;
           summary = { model_version: r.model_version, status: r.status, evaluated_count: r.evaluated_count, feasible_count: r.feasible_count,
             selected_ej_ghz: r.selected?.ej_ghz ?? null, selected_ec_ghz: r.selected?.ec_ghz ?? null,
+            chosen_ej_ghz: (this.chosenCandidate ?? r.selected)?.ej_ghz ?? null,
+            chosen_ec_ghz: (this.chosenCandidate ?? r.selected)?.ec_ghz ?? null,
+            chosen_material_id: this.chosenMaterialId,
             selected_ng: r.selected?.ng ?? null, evaluated_ncut: s.params.ncut,
             f01_ghz: r.selected?.f01_ghz ?? null, anharmonicity_mhz: r.selected?.anharmonicity_mhz ?? null,
             dispersion_upper_khz: r.selected?.dispersion_upper_khz ?? null };

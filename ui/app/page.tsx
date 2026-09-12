@@ -2,6 +2,8 @@
 
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import SavedDesigns from '@/components/SavedDesigns';
+import type { ShareableDesign } from '@/lib/design-link';
 import AskLlm from '@/components/AskLlm';
 import LayoutWorkbench from '@/components/layout/LayoutWorkbench';
 import type { ViewportHandle } from '@/components/Viewport3D';
@@ -21,6 +23,7 @@ import { buildExportReport } from '@/lib/export-report';
 import { validExperimentGoals } from '@/lib/experiment-session';
 import { useComponentMaterials } from '@/lib/useComponentMaterials';
 import { applyLayerMaterials, assignComponentMaterial } from '@/lib/component-material-selection';
+import { DEFAULT_COMPONENT_MATERIALS } from '@/lib/component-materials';
 
 const Viewport3D = dynamic(() => import('@/components/Viewport3D'), {
   ssr: false,
@@ -76,6 +79,7 @@ export default function Page() {
         result,
         baseline,
         selected,
+        explode,
         stale,
         error,
         goals,
@@ -83,11 +87,22 @@ export default function Page() {
         componentMaterials,
         experiments: experiments.evidence,
       }),
-    [params, result, baseline, selected, stale, error, goals, materials, componentMaterials, experiments.evidence],
+    [params, result, baseline, selected, explode, stale, error, goals, materials, componentMaterials, experiments.evidence],
   );
 
   const topicsArray = useMemo(() => Array.from(selectedTopics), [selectedTopics]);
   const explain = useExplain(snapshot, topicsArray);
+
+  const restoreDesign = useCallback((design: ShareableDesign) => {
+    if (!validDeviceParams(design.params) || !validExperimentGoals(design.goals)) return;
+    setParams({ ...design.params }); setGoals({ ...design.goals });
+    setMaterials({ topMaterial: design.topMaterial, baseMaterial: design.baseMaterial,
+      topColor: materialColor(design.topMaterial), baseColor: materialColor(design.baseMaterial) });
+    updateComponentMaterials(() => design.componentMaterials
+      ? { ...design.componentMaterials }
+      : applyLayerMaterials({ ...DEFAULT_COMPONENT_MATERIALS }, design.topMaterial, design.baseMaterial));
+    setMode('explore');
+  }, [updateComponentMaterials]);
 
   const changeParam = useCallback((key: ParamKey, value: number) => {
     if (mode !== 'explore' || !Number.isFinite(value)) return;
@@ -114,6 +129,7 @@ export default function Page() {
 
   const changeComponentMaterial = useCallback((part: PartId, material: string) => {
     updateComponentMaterials(current => assignComponentMaterial(current, part, material));
+    setSelectedTopics(current => new Set([...current, 'materials']));
   }, [updateComponentMaterials]);
 
   const onSelectTopic = useCallback((id: TopicId) => {
@@ -133,7 +149,7 @@ export default function Page() {
   }, []);
 
   const triggerAskLlm = useCallback(() => {
-    if (selectedTopics.size === 0) return;
+    if (selectedTopics.size === 0) setSelectedTopics(new Set(['f01']));
     setLlmOpen(true);
   }, [selectedTopics.size]);
 
@@ -195,6 +211,7 @@ export default function Page() {
   return (
     <>
       <LayoutWorkbench
+        designTools={<SavedDesigns design={{ params, goals, topMaterial: materials.topMaterial, baseMaterial: materials.baseMaterial, componentMaterials }} onRestore={restoreDesign} />}
         mode={mode} onMode={setMode} status={statusBadge}
         componentMaterials={componentMaterials} onComponentMaterialChange={changeComponentMaterial}
         renderQuality={renderQuality} onRenderQuality={setRenderQuality}

@@ -1,6 +1,21 @@
 import { DEFAULT_COMPONENT_MATERIALS, MATERIAL_BY_ID, materialIdFromLegacy, type ComponentMaterials } from './component-materials.ts';
 import type { PartId } from './parts.ts';
 
+/** Shared links, saved designs, and Myla accept only complete, canonical assignments. */
+export function parseComponentMaterials(value: unknown): ComponentMaterials | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const parts = Object.keys(DEFAULT_COMPONENT_MATERIALS) as PartId[];
+  if (Object.keys(value).length !== parts.length) return null;
+  const result = { ...DEFAULT_COMPONENT_MATERIALS };
+  for (const part of parts) {
+    if (!Object.hasOwn(value, part)) return null;
+    const id = (value as Record<string, unknown>)[part];
+    if (typeof id !== 'string' || !Object.hasOwn(MATERIAL_BY_ID, id)) return null;
+    result[part] = id;
+  }
+  return result;
+}
+
 /** Restore only known part/material IDs. Older or corrupt local data cannot create missing shaders. */
 export function restoreComponentMaterials(raw: string | null): ComponentMaterials {
   const result = { ...DEFAULT_COMPONENT_MATERIALS };

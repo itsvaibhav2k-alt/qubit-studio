@@ -2,6 +2,7 @@
 
 import { ILLUSTRATIVE_PARTS, MODELED_PARTS } from '@/lib/parts';
 import type { Part, PartId } from '@/lib/parts';
+import MathText from '@/components/MathText';
 import { PARAMS } from '@/lib/params';
 
 interface PartsTreeProps {
@@ -15,7 +16,7 @@ export default function PartsTree({ selected, hiddenParts, onSelect, onToggleVis
   const row = (part: Part) => {
     const hidden = hiddenParts.includes(part.id);
     return (
-      <div key={part.id} style={{ display: 'flex' }}>
+      <div key={part.id} style={{ display: 'flex' }} data-tour={`part-${part.id}`}>
         <button
           type="button"
           className={`tree-row${part.modeled ? '' : ' dim'}`}
@@ -26,7 +27,7 @@ export default function PartsTree({ selected, hiddenParts, onSelect, onToggleVis
           <span className="label" style={hidden ? { opacity: 0.45 } : undefined}>
             {part.name}
           </span>
-          <span className="tag">{part.param ? PARAMS[part.param].symbol : 'context'}</span>
+          <span className="tag">{part.param ? <MathText math={PARAMS[part.param].symbol} /> : 'context'}</span>
         </button>
           <button
             type="button"
