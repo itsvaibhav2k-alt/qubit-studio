@@ -1,0 +1,17 @@
+/* Requirements panel (Design mode). Tokens and .field/.btn/.errbox/.tech come from globals.css; borders only. */
+.req-body { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.req-body > .field:first-child { margin-top: 0; }
+.req-summary { margin: 0 0 4px; font-family: var(--mono); font-size: 12px; color: var(--text); }
+.req-status { margin: 0; flex: 1 1 160px; font-size: 12px; color: var(--text-2); }
+.req-status.warn { color: var(--warn); }
+.req-status .n,
+.req details.tech dd { font-family: var(--mono); }
+.req .errbox { margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.req .errbox ul { flex-basis: 100%; margin: 0; padding-left: 16px; }
+.req details.tech .field { margin-top: 0; }
+.req details.tech .note { margin: 6px 0 0; font-size: 12px; color: var(--text-3); }
+.field-head .reset:disabled { color: var(--text-3); cursor: default; }
+.req .btn { transition: background-color 120ms ease-out, color 120ms ease-out; }
+/* Long symbols (|f01(½) − f01(0)|) drop to their own line whole instead of breaking mid-string. */
+.req .field-head { flex-wrap: wrap; }
+.req .field-head .sym { white-space: nowrap; }

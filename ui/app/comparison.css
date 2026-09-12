@@ -1,0 +1,22 @@
+/* Baseline comparison strip (Design mode, results dock). Borders only, neutral deltas. */
+.comparison {
+  padding: 10px 12px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--text);
+}
+.comparison .cmp-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+}
+.comparison .cmp-row + .cmp-row { margin-top: 6px; }
+.comparison .mono { font-family: var(--mono); font-size: 12px; color: var(--text-2); }
+.comparison .cmp-prov { color: var(--text-3); }
+.comparison .cmp-err { color: var(--bad); }
+.comparison .cmp-kind {
+  font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+.comparison .cmp-msg { flex: 1 1 240px; }
+.comparison .cmp-changed { color: var(--text-3); }
+.comparison .btn { font-size: 11px; transition: background 120ms, color 120ms; }

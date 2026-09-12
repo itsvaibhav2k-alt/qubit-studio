@@ -1,10 +1,43 @@
 'use client';
 
 import { useState } from 'react';
+import DesignComparison from './DesignComparison';
+import TradeoffPlot from './TradeoffPlot';
+import { INFEASIBLE_SENTENCE, requirementsSummary, searchRangeSummary } from '@/lib/design-copy';
 import { DASH, delta, dispersionDisplay, num, paramSummary, signed } from '@/lib/format';
-import type { ChargePoint, DeviceResult } from '@/lib/types';
+import type {
+  BaselineAssessment,
+  BaselineAssessmentStatus,
+  CandidateId,
+  DesignComparison as DesignComparisonValue,
+  FrozenBaseline,
+  SearchCandidate,
+  SearchResponse,
+} from '@/lib/search-types';
+import type { ChargePoint, DeviceParams, DeviceResult } from '@/lib/types';
 
 export type WorkMode = 'explore' | 'design';
+
+/** Everything the dock needs in Design mode. Null in Explore. */
+export interface DesignDock {
+  run: SearchResponse | null;
+  fresh: boolean;
+  inspected: SearchCandidate | null;
+  candidateIndex: number | null;
+  candidateCount: number;
+  recommendedId: CandidateId | null;
+  appliedParams: DeviceParams;
+  baseline: FrozenBaseline | null;
+  assessmentStatus: BaselineAssessmentStatus;
+  assessment: BaselineAssessment | null;
+  assessmentError: string | null;
+  comparison: DesignComparisonValue;
+  selectionExplanation: string | null;
+  canApply: boolean;
+  onInspect: (id: CandidateId) => void;
+  onApply: () => void;
+  onRetryAssessment: () => void;
+}
 
 interface ResultsDockProps {
   mode: WorkMode;
@@ -16,22 +49,25 @@ interface ResultsDockProps {
   onPin: () => void;
   onClearBaseline: () => void;
   onRetry: () => void;
+  design: DesignDock | null;
 }
 
 interface MetricProps {
   label: string;
   symbol?: string;
+  badge?: string;
   value: string;
   muted?: boolean;
   note?: string;
   deltaText?: { text: string; tone: 'up' | 'down' | 'flat' } | null;
 }
 
-function Metric({ label, symbol, value, muted, note, deltaText }: MetricProps) {
+function Metric({ label, symbol, badge, value, muted, note, deltaText }: MetricProps) {
   return (
     <div className="metric">
       <div className="k">
         {label} {symbol && <span className="sym">{symbol}</span>}
+        {badge && <span className="lock">{badge}</span>}
       </div>
       <div className={`v${muted ? ' none' : ''}`}>{value}</div>
       {deltaText && <div className={`d ${deltaText.tone}`}>{deltaText.text}</div>}
@@ -142,6 +178,51 @@ function ChargeResponse({ result, baseline }: { result: DeviceResult; baseline: 
   );
 }
 
+function TradeoffSlot({ design }: { design: DesignDock }) {
+  const { run } = design;
+  if (!run) {
+    return (
+      <div className="chart">
+        <h4>Trade-off</h4>
+        <p className="empty">Set requirements, then Find designs. Every evaluated candidate will appear here.</p>
+      </div>
+    );
+  }
+  const baselinePlot = design.baseline
+    ? { params: design.baseline.params, assessment: design.assessment?.assessment ?? null }
+    : null;
+  return (
+    <div className="chart">
+      <h4>Trade-off</h4>
+      <p className="cap">
+        Each point is one EJ/EC ratio on the locked path at {num(run.request.target_ghz, 3)} GHz.
+        {!design.fresh && ' Requirements changed since this search — Find designs to refresh.'}
+      </p>
+      <TradeoffPlot
+        run={run}
+        fresh={design.fresh}
+        inspectedId={design.inspected?.candidate_id ?? null}
+        recommendedId={design.recommendedId}
+        appliedParams={design.appliedParams}
+        baseline={baselinePlot}
+        onInspect={design.onInspect}
+      />
+      {design.selectionExplanation && <p className="explain">{design.selectionExplanation}</p>}
+      {run.status === 'infeasible' && !design.selectionExplanation && <p className="explain">{INFEASIBLE_SENTENCE}</p>}
+      <details className="tech">
+        <summary>Search range and settings</summary>
+        <div className="body">
+          <p style={{ margin: 0 }}>{searchRangeSummary(run.request)}</p>
+          <p style={{ margin: '4px 0 0' }}>
+            Selection rule: {run.selection_rule}. Optimality: {run.optimality_scope}. Dispersion reporting floor{' '}
+            {num(run.dispersion_resolution_khz, 3)} kHz.
+          </p>
+        </div>
+      </details>
+    </div>
+  );
+}
+
 export default function ResultsDock({
   mode,
   result,
@@ -152,21 +233,32 @@ export default function ResultsDock({
   onPin,
   onClearBaseline,
   onRetry,
+  design,
 }: ResultsDockProps) {
   // ponytail: collapse state is per-mount; persist to localStorage if anyone asks.
   const [chartsOpen, setChartsOpen] = useState(true);
   const dispersion = dispersionDisplay(result);
   const baselineDispersion = baseline ? dispersionDisplay(baseline) : null;
+  const inDesign = mode === 'design' && design !== null;
+  const locked = inDesign && design.inspected !== null;
+
+  const headline = () => {
+    if (locked && design.run) {
+      return `candidate ${(design.candidateIndex ?? 0) + 1}/${design.candidateCount} · for ${requirementsSummary(design.run.request)}`;
+    }
+    if (result) return paramSummary(result);
+    return error ? 'no completed calculation' : 'waiting for first result';
+  };
 
   return (
     <>
       <div className="panel-head">
         Results
         <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-3)' }}>
-          {result ? paramSummary(result) : error ? 'no completed calculation' : 'waiting for first result'}
+          {headline()}
         </span>
         <span className="spacer" />
-        {baseline && (
+        {baseline && !inDesign && (
           <span className="pill" title={paramSummary(baseline)}>
             baseline: {paramSummary(baseline)}
           </span>
@@ -183,6 +275,21 @@ export default function ResultsDock({
         <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>
           Clear
         </button>
+        {inDesign && (
+          <button
+            type="button"
+            className="btn primary"
+            onClick={design.onApply}
+            disabled={!design.canApply}
+            title={
+              design.canApply
+                ? 'Copy this candidate’s EJ and EC into the working device'
+                : 'Available for a qualifying candidate from a fresh search'
+            }
+          >
+            Apply qualifying design
+          </button>
+        )}
         <button
           type="button"
           className="btn"
@@ -209,19 +316,31 @@ export default function ResultsDock({
         <Metric
           label="Transition frequency"
           symbol="f01"
+          badge={locked ? 'locked' : undefined}
           value={result ? `${num(result.f01_ghz, 4)} GHz` : DASH}
           muted={!result}
           deltaText={delta(result?.f01_ghz, baseline?.f01_ghz, 4, 'GHz')}
         />
+        {inDesign ? (
+          <Metric
+            label="Separation"
+            symbol="A = f01 − f12"
+            value={result ? `${signed(result.anharmonicity_mhz, 1)} MHz` : DASH}
+            muted={!result}
+            note={result ? `α = ${signed(result.alpha_mhz, 1)} MHz` : undefined}
+            deltaText={delta(result?.anharmonicity_mhz, baseline?.anharmonicity_mhz, 1, 'MHz')}
+          />
+        ) : (
+          <Metric
+            label="Anharmonicity"
+            symbol="α = f12 − f01"
+            value={result ? `${signed(result.alpha_mhz, 1)} MHz` : DASH}
+            muted={!result}
+            deltaText={delta(result?.alpha_mhz, baseline?.alpha_mhz, 1, 'MHz')}
+          />
+        )}
         <Metric
-          label="Anharmonicity"
-          symbol="α = f12 − f01"
-          value={result ? `${signed(result.alpha_mhz, 1)} MHz` : DASH}
-          muted={!result}
-          deltaText={delta(result?.alpha_mhz, baseline?.alpha_mhz, 1, 'MHz')}
-        />
-        <Metric
-          label="Charge dispersion"
+          label="Charge variation"
           symbol="|f01(½) − f01(0)|"
           value={dispersion.text}
           muted={!result || !dispersion.resolved}
@@ -246,13 +365,10 @@ export default function ResultsDock({
           <div className="chart">
             <h4>Energy levels</h4>
             <p className="cap">Relative to the ground state, GHz. Dashed = pinned baseline.</p>
-            {result ? <EnergyLevels result={result} baseline={baseline} /> : <p className="empty">{error ? 'No levels — the last calculation did not complete.' : 'Waiting for the first calculation…'}</p>}
+            {result ? <EnergyLevels result={result} baseline={baseline} /> : <p className="empty">{error ? 'No levels — the last calculation did not complete.' : 'Waiting for the calculation…'}</p>}
           </div>
-          {mode === 'design' ? (
-            <div className="chart">
-              <h4>Trade-off</h4>
-              <p className="empty">Set requirements, then Find designs. Every evaluated candidate will appear here.</p>
-            </div>
+          {inDesign ? (
+            <TradeoffSlot design={design} />
           ) : (
             <div className="chart">
               <h4>Charge response</h4>
@@ -264,6 +380,17 @@ export default function ResultsDock({
             </div>
           )}
         </div>
+      )}
+
+      {inDesign && design.baseline && (
+        <DesignComparison
+          comparison={design.comparison}
+          baseline={design.baseline}
+          assessmentStatus={design.assessmentStatus}
+          assessment={design.assessment}
+          assessmentError={design.assessmentError}
+          onRetryAssessment={design.onRetryAssessment}
+        />
       )}
 
       {stale && (

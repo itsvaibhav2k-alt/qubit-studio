@@ -11,6 +11,8 @@ const DIM = '#97a0ab';
 
 interface SchematicProps {
   params: DeviceParams;
+  /** Design mode with a searched candidate: EJ and EC are linked by the frequency lock. */
+  locked?: boolean;
   selected: PartId | null;
   hiddenParts: PartId[];
   onSelect: (id: PartId) => void;
@@ -20,6 +22,7 @@ interface SchematicProps {
 /** Flat circuit view of the same device. Selection is shared with the 3D view. */
 export default function Schematic({
   params,
+  locked = false,
   selected,
   hiddenParts,
   onSelect,
@@ -76,6 +79,11 @@ export default function Schematic({
       <text x="245" y="76" fontSize="10" textAnchor="middle" fill={DIM}>
         island
       </text>
+      {locked && (
+        <text x="245" y="62" fontSize="10" textAnchor="middle" fill={ACCENT} fontFamily="ui-monospace, Menlo, monospace">
+          f01 locked · EJ and EC linked
+        </text>
+      )}
 
       {shown('ground') && (
         <g {...pick('ground')}>

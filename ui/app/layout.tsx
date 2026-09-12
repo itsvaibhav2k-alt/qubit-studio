@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './requirements.css';
+import './tradeoff.css';
+import './comparison.css';
 
 export const metadata: Metadata = {
   title: 'Qubit Studio',

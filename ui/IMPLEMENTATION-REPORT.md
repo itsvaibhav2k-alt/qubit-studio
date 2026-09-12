@@ -154,3 +154,69 @@ The dock and inspector reflow instead of overflowing.
    than always refitting distance?
 4. Charge-response chart: keep the kHz-shift framing, or offer an absolute-GHz toggle?
 5. Persistence — saving a design and reopening it — is not started and is not in this slice.
+
+---
+
+# Design wave (feat/design-workspace)
+
+Adds Explore → Design → requirements → Find designs → inspect → compare on top of the
+explorer, against the search contract owned by the search lane (`lib/search-types.ts`,
+`lib/search-params.ts`, `lib/search-state.ts`, `lib/search-baseline.ts`,
+`lib/search-comparison.ts`, `lib/useDesignSearch.ts`, `app/api/search/route.ts` — copied
+verbatim from `feat/design-search`, not edited here). Requires the updated backend from that
+branch: `/search` now returns `candidate_id`, `selection_evidence`, `baseline_evaluation`.
+
+## What changed
+
+- **Camera fit** (`lib/camera-fit.ts`, `lib/chip-geometry.ts`, `Viewport3D`): radius from the
+  real part geometry at the current explode; refits on resize and explode; only ever dollies
+  out, so manual orbit/zoom survive; Reset view resets then refits.
+- **Dock height**: stage row min 260px; dock capped at `clamp(180px, 42vh, 460px)` with
+  internal scroll on desktop (cap removed ≤1100px); Charts collapse button.
+- **Top bar** grows when wrapped so controls stay clickable at narrow widths.
+- **Explore | Design** control. Explore is unchanged. The working device is `AppliedDevice`
+  state in `page.tsx`; only Explore edits and "Apply qualifying design" change it.
+- **Design mode**: `RequirementsPanel` (target f01, max charge variation on a log slider,
+  min separation; Find designs; status line; Design settings with its own ncut and the
+  read-only search domain). Collapses to a summary only after a feasible search; re-expands
+  on any edit, on infeasible and on error.
+- **TradeoffPlot**: A (MHz) vs charge variation (kHz, log). Limit and minimum drawn from the
+  submitted request; qualifying region shaded; feasible/rejected/≤floor glyphs; recommended,
+  inspected, applied and baseline identities drawn and named in a text read-out. Nearest-point
+  hit testing (14px), hover ghost, ArrowLeft/Right/Home/End in ratio order, Back to
+  recommended. Stale runs are dimmed and non-interactive.
+- **Inspector** in Design: EJ/EC are read-only derived values with the lock note and a
+  Design path slider; ng fixed at 0 with a note; before any search the working values show
+  with no lock claims.
+- **ResultsDock** in Design: f01 carries a `locked` badge only while a candidate is on
+  display; Separation A (positive) replaces the α tile (α shown as a note); trade-off slot
+  replaces the charge-response chart; selection explanation and search range printed;
+  `DesignComparison` strip renders the classification from `search-comparison.ts` verbatim
+  plus the baseline's independent assessment.
+- **Schematic** shows "f01 locked · EJ and EC linked" and the candidate's EJ/EC when locked.
+
+## Honesty rules kept
+
+Explore keeps previous numbers visible while updating; Design never shows one candidate's
+numbers under another's name (`guardEvaluation`). Pin/Apply are disabled while stale,
+running or errored; Apply requires a feasible candidate. Applied identity is derived from
+the working params, never stored. Infeasible wording is "No evaluated design meets these
+requirements." No nearest-limit or binding-limit claim is made; the caption is the
+backend's selection evidence (counts of higher-A candidates rejected per reason).
+
+## Verification
+
+`npm run check` (typecheck, 96 tests, build) and `npm run lint` pass. Live through the proxy
+against the updated backend: 10 kHz → 203/401 qualify, A 302.42 MHz; 1 kHz → 149/401,
+A 261.60 MHz; 1 kHz + 300 MHz → infeasible 0/401. Browser QA: a 42-check Playwright script
+(headless Chromium, 1440×900 and 390×844) covering the first screen, search, lock, design path,
+rejected-point inspection, pin + tighten (cost of tightening 40.814 MHz, baseline fails now),
+infeasible, apply + Explore round-trip, Explore regression, keyboard walk and narrow width —
+all passing. Prep-wave layout fixes were verified by Hermes in-browser.
+
+## Deferred
+
+Editable search domain, per-candidate charge-response chart in the dock, undo/redo, view
+cube, anchored floating editors, broader restyle, multi-candidate compare table,
+persistence, hover tooltips beyond the read-out. `ParamField` can be replaced by
+`SpecField` when Explore is next touched.

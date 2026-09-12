@@ -1,0 +1,31 @@
+/* Trade-off plot: an input device for inspecting candidates. Borders only, one accent, mono numbers. */
+.tradeoff { min-width: 0; }
+.tradeoff svg {
+  width: 100%;
+  display: block;
+  overflow: visible;
+  cursor: crosshair;
+  border-radius: 4px;
+  transition: opacity 150ms ease-out;
+}
+.tradeoff svg text { font-family: var(--mono); }
+.tradeoff svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tradeoff .cap { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin: 4px 0 0; }
+
+.tradeoff-readout {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--text-2);
+  display: grid;
+  gap: 4px;
+}
+.tradeoff-readout .k { text-transform: uppercase; letter-spacing: 0.06em; font-weight: 650; }
+.tradeoff-readout .v { font-family: var(--mono); color: var(--text); overflow-wrap: anywhere; }
+.tradeoff-readout .stale-note { color: var(--warn); }
+.tradeoff-readout .btn { justify-self: start; font-size: 11px; }
+
+.tradeoff.stale svg { opacity: 0.45; pointer-events: none; cursor: default; }
+
+@media (prefers-reduced-motion: reduce) { .tradeoff svg { transition: none; } }
