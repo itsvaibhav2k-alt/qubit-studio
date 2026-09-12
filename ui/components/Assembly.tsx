@@ -3,7 +3,7 @@
 import { Edges, Line, RoundedBox } from '@react-three/drei';
 import type { ThreeEvent } from '@react-three/fiber';
 import { createContext, useContext, useMemo } from 'react';
-import { BoxGeometry, CanvasTexture, CatmullRomCurve3, ExtrudeGeometry, Path, Shape, SRGBColorSpace, TubeGeometry, Vector3, Vector2, LatheGeometry, TorusGeometry } from 'three';
+import { BoxGeometry, CanvasTexture, CatmullRomCurve3, ExtrudeGeometry, Path, Shape, SphereGeometry, SRGBColorSpace, TubeGeometry, Vector3, Vector2, LatheGeometry, TorusGeometry } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ANCHORS, BOARD, CHIP, FRAME, GATE, GROUND, JUNCTION, PADS, PLATE } from '@/lib/chip-geometry';
 import type { PartId } from '@/lib/parts';
@@ -13,13 +13,13 @@ export const ACCENT = '#1a6fe0';
 
 /** Illustrative appearance only. None of these values enter the calculation. */
 const MAT = {
-  gold: { color: '#e8b756', metalness: 1, roughness: 0.32 },
-  goldDeep: { color: '#ac7e32', metalness: 1, roughness: 0.39 },
-  graphite: { color: '#8b8880', metalness: 0.95, roughness: 0.40 },
+  gold: { color: '#dfb66a', metalness: 1, roughness: 0.48 },
+  goldDeep: { color: '#ac8649', metalness: 1, roughness: 0.50 },
+  graphite: { color: '#8b8880', metalness: 0.95, roughness: 0.52 },
   teal: { color: '#124355', metalness: 0.08, roughness: 0.58, clearcoat: 0.12, clearcoatRoughness: 0.45 },
   chip: { color: '#07111c', metalness: 0.0, roughness: 0.34, clearcoat: 0, clearcoatRoughness: 0.15 },
   silver: { color: '#c3c8cd', metalness: 0.98, roughness: 0.48 },
-  screw: { color: '#e2b65e', metalness: 1, roughness: 0.24 },
+  screw: { color: '#dfba77', metalness: 1, roughness: 0.42 },
   black: { color: '#0e1114', metalness: 0.2, roughness: 0.8 },
 } as const;
 
@@ -65,11 +65,11 @@ function surfaceFinish(kind: MatKind) {
 function Material({ kind, selected }: { kind: MatKind; selected: boolean }) {
   const color = useContext(PartColor);
   const metal = !['teal', 'chip', 'black'].includes(kind);
-  return <meshPhysicalMaterial {...MAT[kind]} color={color ?? MAT[kind].color} envMapIntensity={kind === 'chip' ? 0.15 : kind === 'gold' || kind === 'goldDeep' ? 1.65 : 1} specularIntensity={kind === 'chip' ? 0.15 : kind === 'gold' || kind === 'goldDeep' ? 1.65 : 1}
+  return <meshPhysicalMaterial {...MAT[kind]} color={color ?? MAT[kind].color} envMapIntensity={kind === 'chip' ? 0.25 : 1} specularIntensity={kind === 'chip' ? 0.25 : 1}
     bumpMap={metal ? surfaceFinish(kind) : undefined}
     roughnessMap={metal ? surfaceFinish(kind) : undefined}
-    bumpScale={kind === 'silver' ? 0.00012 : 0.00055}
-    anisotropy={metal ? 0.45 : 0}
+    bumpScale={kind === 'silver' ? 0.00012 : 0.00025}
+    anisotropy={metal ? 0.30 : 0}
     emissive={selected ? ACCENT : '#000000'} emissiveIntensity={selected ? 0.045 : 0} />;
 }
 
@@ -327,6 +327,8 @@ export function Package({ selected, hidden, explode, onSelect, guides }: Omit<Pa
   }, []);
   const seam = useMemo(() => ringGeometry(2.458, 2.13, 0.010, 0.002, 0.18), []);
   const lowerRim = useMemo(() => ringGeometry(2.49, 2.13, 0.072, 0.008, 0.18), []);
+  // Narrow turned edge bands reveal the package's thickness at grazing angles.
+  const edgeBand = useMemo(() => ringGeometry(2.492, 2.465, 0.004, 0.0008, 0.18), []);
   const innerStep = useMemo(() => ringGeometry(2.18, 2.095, 0.02, 0.004, 0.22), []);
   const plate = useMemo(() => {
     const shape = roundedRect(PLATE.size - 0.014, 0.045);
@@ -353,6 +355,7 @@ export function Package({ selected, hidden, explode, onSelect, guides }: Omit<Pa
       <Slab geometry={frame} top={FRAME.top} depth={0.14} bevel={BEVEL} kind="gold" selected={selected} />
       <Slab geometry={seam} top={FRAME.top - 0.14} depth={0.010} bevel={0.002} kind="black" selected={false} />
       <Slab geometry={lowerRim} top={FRAME.top - 0.148} depth={0.072} bevel={0.008} kind="goldDeep" selected={selected} />
+      {[0.165, 0.185, 0.205].map(offset => <Slab key={offset} geometry={edgeBand} top={FRAME.top - offset} depth={0.004} bevel={0.0008} kind="gold" selected={selected} />)}
       <Slab geometry={innerStep} top={FRAME.top - 0.028} depth={0.02} bevel={0.004} kind="goldDeep" selected={selected} />
       {FRAME_BORES.map((p, i) => i < 4
         ? <Screw key={i} position={[p.x, FRAME.top - 0.002, p.z]} r={0.074} />
@@ -361,6 +364,7 @@ export function Package({ selected, hidden, explode, onSelect, guides }: Omit<Pa
     <PartGroup id="package" explodeY={PLATE.explodeY} explode={explode} hidden={hidden} onSelect={onSelect}>
       <Slab geometry={lip} top={PLATE.top - 0.016} depth={0.027} bevel={0.003} kind="goldDeep" selected={false} />
       <LidDetails />
+      <PackageInserts />
       <Slab geometry={plate} top={PLATE.top} depth={PLATE.depth} bevel={0.007} kind="graphite" selected={selected} />
       {[-1, 1].map(sign => <group key={sign} position={[0, railY, sign * railOffset]}>
         <RoundedBox args={[1.72, 0.018, 0.198]} position-y={-0.053} radius={0.012} smoothness={4} castShadow>
@@ -382,6 +386,77 @@ export function Package({ selected, hidden, explode, onSelect, guides }: Omit<Pa
         </mesh>)}
       </group>)}
     </PartGroup>
+  </>;
+}
+
+/** Reference-inspired packaging detail only; not additional simulated devices or wiring. */
+function PackageInserts() {
+  const detail = useMemo(() => {
+    const traces = [], terminals = [], bodies = [], rings = [];
+    for (const sign of [-1, 1]) {
+      for (let i = 0; i < 12; i++) {
+        const x = 0.666 + i * 0.017;
+        for (const end of [-1, 1]) {
+          const body = new BoxGeometry(0.009, 0.012, 0.025);
+          body.translate(x, PLATE.top + 0.011, 0.29 + end * 0.213);
+          if (sign < 0) body.rotateY(Math.PI);
+          bodies.push(body);
+          for (const tip of [-1, 1]) {
+            const terminal = new BoxGeometry(0.010, 0.013, 0.007);
+            terminal.translate(x, PLATE.top + 0.011, 0.29 + end * 0.213 + tip * 0.012);
+            if (sign < 0) terminal.rotateY(Math.PI);
+            terminals.push(terminal);
+          }
+        }
+        // Parallel rounded fan-out stays in the shield's side corridor, clear of the chip.
+        const curve = new CatmullRomCurve3([
+          new Vector3(x, PLATE.top + 0.0018, 0.29 - 0.225),
+          new Vector3(x, PLATE.top + 0.0018, 0.035 - i * 0.008),
+          new Vector3(x - 0.014, PLATE.top + 0.0018, 0.016 - i * 0.008),
+          new Vector3(0.626, PLATE.top + 0.0018, 0.016 - i * 0.008),
+        ]);
+        const trace = new TubeGeometry(curve, 20, 0.0013, 5, false);
+        if (sign < 0) trace.rotateY(Math.PI);
+        traces.push(trace);
+        for (const end of [-1, 1]) {
+          const finger = new BoxGeometry(0.009, 0.003, 0.045);
+          finger.translate(x, PLATE.top + 0.019, 0.29 + end * 0.156);
+          if (sign < 0) finger.rotateY(Math.PI);
+          terminals.push(finger);
+        }
+      }
+      for (const z of [0.185, 0.395]) for (const x of [0.683, 0.837]) {
+        const ring = new TorusGeometry(0.008, 0.0017, 6, 16);
+        ring.rotateX(-Math.PI / 2); ring.translate(x, PLATE.top + 0.028, z);
+        if (sign < 0) ring.rotateY(Math.PI);
+        rings.push(ring);
+      }
+    }
+    const result = { traces: mergeGeometries(traces), terminals: mergeGeometries(terminals), bodies: mergeGeometries(bodies), rings: mergeGeometries(rings) };
+    [...traces, ...terminals, ...bodies, ...rings].forEach(g => g.dispose());
+    return result;
+  }, []);
+  return <>
+    {[-1, 1].map(sign => <group key={sign} rotation-y={sign < 0 ? Math.PI : 0}>
+      <group position={[0.76, PLATE.top, 0.29]}>
+        <RoundedBox args={[0.238, 0.008, 0.354]} position-y={0.004} radius={0.003} smoothness={3} receiveShadow>
+          <meshPhysicalMaterial color="#363d3b" metalness={0.3} roughness={0.65} />
+        </RoundedBox>
+        <RoundedBox args={[0.224, 0.010, 0.338]} position-y={0.012} radius={0.004} smoothness={3} castShadow receiveShadow>
+          <meshPhysicalMaterial color="#d8ceb1" metalness={0.22} roughness={0.62} />
+        </RoundedBox>
+        <RoundedBox args={[0.184, 0.010, 0.248]} position-y={0.022} radius={0.004} smoothness={3} castShadow receiveShadow>
+          <meshPhysicalMaterial color={sign > 0 ? '#285e62' : '#474f53'} metalness={0.18} roughness={0.58} />
+        </RoundedBox>
+        <RoundedBox args={[0.122, 0.012, sign > 0 ? 0.164 : 0.132]} position-y={0.033} radius={0.003} smoothness={3} castShadow receiveShadow>
+          <Material kind={sign > 0 ? 'goldDeep' : 'silver'} selected={false} />
+        </RoundedBox>
+      </group>
+    </group>)}
+    <mesh geometry={detail.traces} receiveShadow><meshPhysicalMaterial color="#c2ad7d" metalness={0.85} roughness={0.52} /></mesh>
+    <mesh geometry={detail.bodies} castShadow><meshPhysicalMaterial color="#303736" roughness={0.68} /></mesh>
+    <mesh geometry={detail.terminals} receiveShadow><meshPhysicalMaterial color="#c4c7bc" metalness={0.9} roughness={0.46} /></mesh>
+    <mesh geometry={detail.rings}><meshPhysicalMaterial {...MAT.goldDeep} /></mesh>
   </>;
 }
 
@@ -509,15 +584,15 @@ function BoardHardware() {
   </>;
 }
 
-function planGeometry(path:string,depth:number,mirror=false) {
+function planGeometry(path:string,depth:number,mirror=false,bevel=0) {
   const shape=new Shape();
   planContour(path).forEach(([x,z],i)=>{const y=mirror?z:-z;if(i===0)shape.moveTo(x,y);else shape.lineTo(x,y);});
   shape.closePath();
-  return new ExtrudeGeometry(shape,{depth,bevelEnabled:false});
+  return new ExtrudeGeometry(shape,{depth,bevelEnabled:bevel>0,bevelSize:bevel,bevelThickness:bevel,bevelSegments:3});
 }
 
 export function Substrate({ selected, hidden, explode, onSelect, guides }: Omit<PartProps, 'id'>) {
-  const geometry=useMemo(()=>planGeometry(SUBSTRATE_PLAN,CHIP.thickness),[]);
+  const geometry=useMemo(()=>planGeometry(SUBSTRATE_PLAN,CHIP.thickness,false,0.0012),[]);
   return (
     <PartGroup id="substrate" explodeY={CHIP.explodeY} explode={explode} hidden={hidden} onSelect={onSelect} guides={guides}>
       <mesh geometry={geometry} rotation-x={-Math.PI/2} castShadow receiveShadow position-y={-CHIP.thickness}>
@@ -543,7 +618,26 @@ function BondWires() {
     }
     const merged = mergeGeometries(wires); wires.forEach(g => g.dispose()); return merged;
   }, []);
-  return <mesh geometry={geometry} castShadow><meshPhysicalMaterial color="#e8c57b" metalness={1} roughness={0.24} /></mesh>;
+  const feet = useMemo(() => {
+    const pieces = [];
+    for (let side = 0; side < 4; side++) for (let i = 0; i < 46; i++) {
+      const t = -0.47 + i * 0.94 / 45;
+      // Flattened bonds are illustrative attachment detail, not electrical geometry.
+      for (const [x, y, z] of [
+        [t, 0.005, CHIP.size / 2 - 0.022],
+        [t * 1.05, PLATE.top + 0.003, PLATE.window / 2 + 0.028],
+      ]) {
+        const foot = new SphereGeometry(1, 8, 6);
+        foot.scale(0.0045, 0.003, 0.008);
+        foot.translate(x, y, z); foot.rotateY(side * Math.PI / 2); pieces.push(foot);
+      }
+    }
+    const merged = mergeGeometries(pieces); pieces.forEach(g => g.dispose()); return merged;
+  }, []);
+  return <>
+    <mesh geometry={geometry} castShadow><meshPhysicalMaterial color="#ddbd83" metalness={1} roughness={0.40} /></mesh>
+    <mesh geometry={feet} receiveShadow><meshPhysicalMaterial color="#d6b77a" metalness={1} roughness={0.46} /></mesh>
+  </>;
 }
 
 function BoardContacts() {
@@ -585,7 +679,7 @@ export function Ground({ selected, hidden, explode, onSelect, guides }: Omit<Par
 }
 
 export function Capacitor({ selected, hidden, explode, onSelect, guides }: Omit<PartProps, 'id'>) {
-  const electrodes=useMemo(()=>[planGeometry(LEFT_ELECTRODE,PADS.height),planGeometry(RIGHT_ELECTRODE,PADS.height)],[]);
+  const electrodes=useMemo(()=>[planGeometry(LEFT_ELECTRODE,PADS.height,false,0.0006),planGeometry(RIGHT_ELECTRODE,PADS.height,false,0.0006)],[]);
   return <PartGroup id="capacitor" explodeY={PADS.explodeY} explode={explode} hidden={hidden} onSelect={onSelect} guides={guides}>
     {electrodes.map((geometry,i)=><mesh key={i} geometry={geometry} rotation-x={-Math.PI/2} position-y={.001} castShadow receiveShadow><Material kind="silver" selected={selected}/>{selected&&<Edges color={ACCENT} lineWidth={1.2}/>}</mesh>)}
   </PartGroup>;
