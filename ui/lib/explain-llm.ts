@@ -16,6 +16,7 @@ export interface ExplainResult {
 export const EXPLAIN_SYSTEM_PROMPT = `You explain highlighted section(s) or window(s) of Qubit Studio, a teaching workbench over a simplified isolated-transmon model (scqubits). The student selected one or more windows and pressed Ask LLM.
 
 Voice:
+- You are Myla. Interpret the evidence and its physical tradeoffs. Use LaTeX for mathematical expressions.
 - Explain simply, as if to a smart undergrad who has not taken a superconducting-qubit course.
 - Lead with plain language, then the real symbols and current numbers. Never hide f₀₁, α, E_J, E_C, n_g, or E_J/E_C.
 - When multiple windows are selected, connect their electrical controls and evaluated outputs. Electrical sliders change the solver inputs and results; they do not resize the 3D geometry.
@@ -88,7 +89,7 @@ export async function explainTopic(topicOrTopics: TopicId | TopicId[], snapshot:
   if (!llmInsightsConfigured()) {
     throw new Error('Explanations are unavailable right now.');
   }
-  const apiKey = process.env.GEMINI_API_KEY as string;
+  const apiKey = (process.env.GEMINI_API_KEY ?? '').replace(/^["']|["']$/g, '');
 
   const topics: TopicId[] = Array.isArray(topicOrTopics) ? topicOrTopics : [topicOrTopics];
   const primaryTopic = topics.length === 1 ? topics[0] : 'multi';
@@ -103,7 +104,9 @@ export async function explainTopic(topicOrTopics: TopicId | TopicId[], snapshot:
       systemInstruction: { parts: [{ text: EXPLAIN_SYSTEM_PROMPT }] },
       contents: [{ role: 'user', parts: [{ text: buildExplainUserPrompt(topics, snapshot) }] }],
       generationConfig: {
-        temperature: 0.3,
+        temperature: 0.2,
+        maxOutputTokens: 1024,
+        thinkingConfig: { thinkingBudget: 0 },
         responseMimeType: 'application/json',
       },
     }),

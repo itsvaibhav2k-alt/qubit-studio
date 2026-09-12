@@ -2,12 +2,14 @@
 import type { ComponentProps } from 'react';
 import { ArrowLeft, Info, LockKeyhole, ScanSearch } from 'lucide-react';
 import type Inspector from '@/components/Inspector';
+import GeometryEditor from '@/components/GeometryEditor';
 import ParamField from '@/components/ParamField';
 import DesignLab from '@/components/DesignLab';
 import MaterialSensitivity from '@/components/MaterialSensitivity';
 import { INSPECTIONS } from '@/lib/layout-inspection';
 import { PARAMS } from '@/lib/params';
 import { PART_BY_ID } from '@/lib/parts';
+import { TOPICS, TOPIC_IDS } from '@/lib/explain-topics';
 import { num } from '@/lib/format';
 import type { DeviceParams } from '@/lib/types';
 
@@ -34,6 +36,8 @@ export default function LayoutInspector(props: Props) {
   const { selected, params, result, readOnly, candidate, candidateCurrent, inspecting, onInspect, onChange, solverOpen, onSolverOpen }=props;
   const part = selected ? PART_BY_ID[selected] : null;
   const text = selected ? copy[selected] : null;
+  const recommended = props.session.search.result?.selected;
+  const alternative = candidate && recommended && (candidate.ej_ghz !== recommended.ej_ghz || candidate.ec_ghz !== recommended.ec_ghz || candidate.ng !== recommended.ng);
   const inspectedParams = readOnly && candidate ? candidate : params;
   return <div className="layout-inspector">
     <section className="layout-editor" aria-label="Selected component inspector">
@@ -49,15 +53,17 @@ export default function LayoutInspector(props: Props) {
         <p>Geometry is illustrative. Editing energy values does not resize the pads or calculate a new capacitance from their shape.</p>
         {selected==='junction' && <p>The enlarged overlap identifies the weak link between the two electrodes. The junction detail is exaggerated for legibility.</p>}
         <p>EJ/h {num(inspectedParams.ej_ghz,2)} GHz · EC/h {num(inspectedParams.ec_ghz,3)} GHz · ng {num(inspectedParams.ng,3)}</p>
-        <details className="tech"><summary>Materials & sensitivity</summary><MaterialSensitivity session={props.session} params={params} result={result} onApply={props.onApplyMaterialScenario} onMaterialsChange={props.onMaterialsChange} topMaterial={props.materials.topMaterial} baseMaterial={props.materials.baseMaterial}/></details>
+        <details className="tech"><summary>Materials & sensitivity</summary><MaterialSensitivity onAsk={props.onSelectTopic} session={props.session} params={params} result={result} onApply={props.onApplyMaterialScenario} onMaterialsChange={props.onMaterialsChange} topMaterial={props.materials.topMaterial} baseMaterial={props.materials.baseMaterial}/></details>
+        <details className="tech"><summary>Explanation topics</summary><div className="row-actions">{TOPIC_IDS.map(id => <button type="button" className="btn" key={id} aria-pressed={props.selectedTopics.has(id)} onClick={() => props.onSelectTopic(id)}>{TOPICS[id].label}</button>)}</div></details>
         <div className="row-actions"><button className="btn" disabled={props.selectedTopics.size===0} onClick={props.onAskLlm}>Ask AI about selection ({props.selectedTopics.size})</button><button className="btn" disabled={props.selectedTopics.size===0} onClick={props.onClearTopics}>Clear AI selection</button></div>
       </div></details></div>
     </section>
+    {!readOnly && <GeometryEditor key={`${params.ej_ghz}-${params.ec_ghz}`} params={params} onApply={(ej_ghz, ec_ghz) => props.onApplyMaterialScenario({ ...params, ej_ghz, ec_ghz })} />}
     <details className="layout-solver tech" open={solverOpen} onToggle={event=>onSolverOpen(event.currentTarget.open)}>
       <summary>Solver settings</summary><div className="body"><ParamField paramKey="ncut" value={params.ncut} onChange={onChange} disabled={readOnly}/><p>{PARAMS.ncut.meaning}</p>{readOnly&&<p>Return to Explore to change numerical settings.</p>}</div>
     </details>
     {readOnly && <section className="layout-design-tools" aria-label="Existing Design workflow">
-      {candidate && <p className="layout-candidate-scope">The inspector shows the {candidateCurrent?'current':'outdated'} recommendation. The chip and results remain the applied device until you choose “Use variables + materials”.</p>}
+      {candidate && <p className="layout-candidate-scope">The inspector shows the {candidateCurrent?'current':'outdated'} {alternative?'selected alternative':'recommendation'}. The chip and results remain the applied device until you choose “Use variables + materials”.</p>}
       <DesignLab session={props.session} params={params} goals={props.goals} onGoalsChange={props.onGoalsChange} onApply={props.onApplyMaterialScenario} onMaterialsChange={props.onMaterialsChange} currentMaterials={props.materials}/>
     </section>}
   </div>;

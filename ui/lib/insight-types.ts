@@ -84,6 +84,7 @@ export interface ChipSnapshot {
   experiments?: SnapshotExperiment[];
   stale: boolean;
   error: string | null;
+  view_explode?: number;
 }
 
 export interface InsightApiResponse extends InsightBundle {

@@ -1,9 +1,10 @@
 'use client';
 
+import DesignExtensions from './DesignExtensions';
 import { num } from '@/lib/format';
 import { BCQT_SOURCE } from '@/lib/material-records';
 import type { MaterialAppearance } from '@/lib/material-colors';
-import { processBurden, recommendMaterialStack } from '@/lib/material-ranking';
+import { processBurden, rankMaterialStacks } from '@/lib/material-ranking';
 import type { SubstratePreference } from '@/lib/material-ranking';
 import { numericExperimentInput, type ExperimentSession } from '@/lib/experiment-session';
 import type {
@@ -23,6 +24,7 @@ interface DesignLabProps {
 
 export default function DesignLab({
   session,
+  params,
   goals,
   onGoalsChange,
   onApply,
@@ -33,10 +35,12 @@ export default function DesignLab({
   const search = session.search.result, stress = session.stress.result, tunable = session.tunable.result;
   const busy = (['search', 'stress', 'tunable', 'material'] as const).find((kind) => session[kind].status === 'pending') ?? null;
   const producingControls = session.search.snapshot?.controls;
-  const recommendedStack = recommendMaterialStack(
+  const rankedStacks = rankMaterialStacks(
     producingControls?.materialPriority ?? materialPriority,
     producingControls?.substratePreference ?? substratePreference,
   );
+  const recommendedStack = rankedStacks.find(stack => stack.id === session.chosenMaterialId) ?? rankedStacks[0];
+  const candidate = session.chosenCandidate;
   const updateGoal = (key: keyof DesignGoals, value: number) => onGoalsChange({ ...goals, [key]: value });
   const run = session.run;
   const error = session.search.error ?? session.stress.error ?? session.tunable.error;
@@ -46,6 +50,7 @@ export default function DesignLab({
       <div className="insp-title">Find a complete design</div>
       <p className="insp-role">Choose a target speed. The app will recommend electrical settings and an evidence-backed material stack.</p>
 
+      <DesignExtensions session={session} params={params} goals={goals} materials={currentMaterials} onGoalsChange={onGoalsChange} />
       <div className="current-stack">
         <span>Currently using</span>
         <strong>{currentMaterials.topMaterial} on {currentMaterials.baseMaterial}</strong>
@@ -105,15 +110,15 @@ export default function DesignLab({
       {session.validationError('search') && <p id="design-search-validation" className="scenario-error" role="status">{session.validationError('search')}</p>}
           {search && (
             <div className="lab-result" aria-live="polite">
-              <span className={`pill ${!session.search.current ? '' : search.selected ? 'ok' : 'no'}`}>{!session.search.current ? 'Outdated result — rerun search' : search.selected ? '✓ Found a design that passes' : 'No design passed these rules'}</span>
+              <span className={`pill ${!session.search.current ? '' : candidate ? 'ok' : 'no'}`}>{!session.search.current ? 'Outdated result — rerun search' : candidate ? '✓ Found a design that passes' : 'No design passed these rules'}</span>
               <p>The app checked {search.evaluated_count} options; {search.feasible_count} passed every rule.</p>
-              {search.selected && <>
+              {candidate && <>
                 <div className="recommend-block">
                   <strong>Electrical settings</strong>
-                  <dl className="kv"><dt>EJ / EC</dt><dd>{num(search.selected.ej_ghz, 3)} / {num(search.selected.ec_ghz, 3)} GHz</dd><dt>Offset charge / cutoff</dt><dd>ng = 0 / ncut = {session.search.snapshot?.params.ncut}</dd><dt>Operating frequency</dt><dd>{num(search.selected.f01_ghz, 3)} GHz</dd><dt>Level separation</dt><dd>{num(search.selected.anharmonicity_mhz, 1)} MHz</dd><dt>Charge sensitivity</dt><dd>≤ {num(search.selected.dispersion_upper_khz, 3)} kHz</dd></dl>
+                  <dl className="kv"><dt>EJ / EC</dt><dd>{num(candidate.ej_ghz, 3)} / {num(candidate.ec_ghz, 3)} GHz</dd><dt>Offset charge / cutoff</dt><dd>ng = 0 / ncut = {session.search.snapshot?.params.ncut}</dd><dt>Operating frequency</dt><dd>{num(candidate.f01_ghz, 3)} GHz</dd><dt>Level separation</dt><dd>{num(candidate.anharmonicity_mhz, 1)} MHz</dd><dt>Charge sensitivity</dt><dd>≤ {num(candidate.dispersion_upper_khz, 3)} kHz</dd></dl>
                 </div>
                 <div className="recommend-block material-choice">
-                  <strong>Suggested material stack</strong>
+                  <strong>{recommendedStack.id !== rankedStacks[0].id ? 'Selected material alternative' : 'Suggested material stack'}</strong>
                   <div className="stack-name">{recommendedStack.material} on {recommendedStack.substrate}</div>
                   <dl className="kv">
                     <dt>Measured loss</dt><dd>{recommendedStack.lowPowerLossMin.toExponential(1)}–{recommendedStack.lowPowerLossMax.toExponential(1)}</dd>

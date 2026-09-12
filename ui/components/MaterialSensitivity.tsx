@@ -1,5 +1,7 @@
 'use client';
 
+import MathText from '@/components/MathText';
+import type { TopicId } from '@/lib/explain-topics';
 import { num, signed } from '@/lib/format';
 import { BCQT_SOURCE, MATERIAL_CATALOG, MATERIAL_RECORDS } from '@/lib/material-records';
 import { materialColor } from '@/lib/material-colors';
@@ -16,9 +18,10 @@ interface MaterialSensitivityProps {
   onMaterialsChange: (topMaterial: string, baseMaterial: string) => void;
   topMaterial: string;
   baseMaterial: string;
+  onAsk?: (id: TopicId) => void;
 }
 
-export default function MaterialSensitivity({ session, params, result, onApply, onMaterialsChange, topMaterial, baseMaterial }: MaterialSensitivityProps) {
+export default function MaterialSensitivity({ session, params, result, onApply, onMaterialsChange, topMaterial, baseMaterial, onAsk }: MaterialSensitivityProps) {
   const { junctionFactor, capacitanceFactor } = session.controls;
   const comparison = session.material.result, error = session.material.error;
   const loading = session.material.status === 'pending';
@@ -51,19 +54,21 @@ export default function MaterialSensitivity({ session, params, result, onApply, 
 
   return (
     <div className="insp-section material-sensitivity">
-      <div className="insp-title">Material sandbox</div>
+      <button type="button" className="insp-title myla-hit" onClick={() => onAsk?.('materials')}>
+        Material sandbox
+      </button>
       <p className="insp-role">
         Combine any two real materials from the verified catalog—even the same material twice.
       </p>
 
       <div className="sandbox-pickers">
-        <label className="material-picker">
+        <label className="material-picker" data-tour="top-mat">
           <span>Top material</span>
           <select value={topMaterial} onChange={(event) => changeMaterial('top', event.target.value)}>
             {MATERIAL_CATALOG.map((material) => <option key={material} value={material}>{material}</option>)}
           </select>
         </label>
-        <label className="material-picker">
+        <label className="material-picker" data-tour="base-mat">
           <span>Base material</span>
           <select value={baseMaterial} onChange={(event) => changeMaterial('base', event.target.value)}>
             {MATERIAL_CATALOG.map((material) => <option key={material} value={material}>{material}</option>)}
@@ -110,7 +115,7 @@ export default function MaterialSensitivity({ session, params, result, onApply, 
               <dt>Full stack</dt><dd>{majoranaRecord.layers.join(' · ')}</dd>
             </dl>
             <p className="scenario-scope">
-              No EJ/EC or comparable resonator-loss record is provided.{' '}
+              No <MathText math="E_J/E_C" /> or comparable resonator-loss record is provided.{' '}
               <a href={majoranaRecord.sourceUrl} target="_blank" rel="noreferrer">Source data</a>.
             </p>
           </>
@@ -119,7 +124,7 @@ export default function MaterialSensitivity({ session, params, result, onApply, 
         )}
       </div>
 
-      <label className="scenario-field">
+      <label className="scenario-field" data-tour="junction-fx">
         <span>Junction effect <strong>{signed((junctionFactor - 1) * 100, 0)}%</strong></span>
         <input
           type="range"
@@ -133,7 +138,7 @@ export default function MaterialSensitivity({ session, params, result, onApply, 
         />
       </label>
 
-      <label className="scenario-field">
+      <label className="scenario-field" data-tour="cap-fx">
         <span>Total capacitance <strong>{signed((capacitanceFactor - 1) * 100, 0)}%</strong></span>
         <input
           type="range"

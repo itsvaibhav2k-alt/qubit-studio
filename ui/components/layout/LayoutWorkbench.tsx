@@ -1,6 +1,8 @@
 'use client';
-import { useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { Blocks, Box, ChevronDown, CircuitBoard, Columns2, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import GuidedTour from '@/components/GuidedTour';
+import { TOUR_STEPS } from '@/lib/guided-tour';
 import { PARTS, type PartId } from '@/lib/parts';
 import type Inspector from '@/components/Inspector';
 import type ResultsDock from '@/components/ResultsDock';
@@ -19,9 +21,11 @@ interface Props {
   status:{className:string;text:string}; hiddenParts:PartId[]; onToggleVisible:(id:PartId)=>void;
   explode:number; onExplode:(value:number)=>void; onReset3d:()=>void;
   onExport:()=>void; canExport:boolean; onPreset:(name:string)=>void; onResetParams:()=>void; atDefaults:boolean;
-  children:ReactNode;
+  children:ReactNode; designTools?:ReactNode;
 }
 export default function LayoutWorkbench(props:Props) {
+  const [tour,setTour]=useState<number|null>(null);
+  const closeTour=useCallback(()=>setTour(null),[]);
   const [view,setView]=useState<'layout'|'3d'>('3d');
   const [split,setSplit]=useState(false);
   const [ratio,setRatio]=useState(50);
@@ -44,7 +48,16 @@ export default function LayoutWorkbench(props:Props) {
     // Fit after the pane is visible, including when entry changes the pane arrangement.
     requestAnimationFrame(()=>{const {width,height}=inspectionSize();setLayoutView(current=>inspectPart(current,part,width,height,focus));});
   };
-  const candidateSource=session.search.result?.selected;
+  const goTour=(index:number)=>{
+    const step=TOUR_STEPS[index]; if(!step)return;
+    setTour(index); props.onMode(step.tab==='experiment'?'design':'explore');
+    if(index===0)document.querySelector('.learning-menu')?.removeAttribute('open');
+    if(step.part)inspector.onSelect(step.part);
+    if(step.view==='3d'){setView('3d');setSplit(false);}
+    if(step.view==='schematic'){setView('layout');setSplit(false);setCircuit(true);}
+    if(step.view==='split')setSplit(true);
+  };
+  const candidateSource=session.chosenCandidate;
   const candidate=candidateSource&&session.search.snapshot?{ej_ghz:candidateSource.ej_ghz,ec_ghz:candidateSource.ec_ghz,ng:0,ncut:session.search.snapshot.params.ncut}:null;
   const inspect=()=>{if(showLayout&&layoutView.inspecting===selected)setLayoutView(returnFromInspection(layoutView));else if(selected)openInspection(selected);};
   const openSolver=()=>{setSolverOpen(true);requestAnimationFrame(()=>{const node=aside.current?.querySelector<HTMLElement>('.layout-solver summary');node?.focus();node?.scrollIntoView({block:'nearest'});});};
@@ -54,6 +67,7 @@ export default function LayoutWorkbench(props:Props) {
     <header className="wave-header">
       <div className="wave-brand"><Blocks size={24} strokeWidth={1.8}/>Qubit Studio</div>
       <nav className="wave-modes" aria-label="Workspace mode">{(['explore','design'] as const).map(item=><button key={item} aria-pressed={mode===item} onClick={()=>props.onMode(item)}>{item==='explore'?'Explore':'Design'}</button>)}</nav>
+      <details className="layout-popover learning-menu"><summary>Design tools</summary><div>{props.designTools}<button type="button" onClick={()=>goTour(0)}>Guided learning</button></div></details>
       <span className="wave-device">Transmon / 01</span><span role="status" className={props.status.className}>{props.status.text}</span>
       <details className="layout-popover device-menu"><summary>Device <ChevronDown size={14}/></summary><div><label>Demo preset<select defaultValue="" disabled={mode==='design'} onChange={e=>{if(e.target.value)props.onPreset(e.target.value);e.target.value='';}}><option value="" disabled>Choose preset…</option><option value="default">Balanced default</option><option value="reference">scqubits reference</option><option value="protected">Low charge sensitivity</option><option value="anharmonic">High anharmonicity</option></select></label><button disabled={props.atDefaults||mode==='design'} onClick={props.onResetParams}>Reset all parameters</button></div></details>
     </header>
@@ -82,6 +96,7 @@ export default function LayoutWorkbench(props:Props) {
       {circuit&&<div id="wave-circuit"><LayoutCircuit params={params} selected={selected} onSelect={onSelect}/></div>}
     </main>
     <aside ref={aside} className="wave-inspector"><LayoutInspector {...inspector} readOnly={mode==='design'} candidate={candidate} candidateCurrent={session.search.current} inspecting={showLayout&&layoutView.inspecting===selected} onInspect={inspect} solverOpen={solverOpen} onSolverOpen={setSolverOpen}/></aside>
-    <section className="wave-results"><LayoutResults {...results} onSolver={openSolver} onExport={props.onExport} canExport={props.canExport} design={mode==='design'}/></section>
+    <section className="wave-results"><LayoutResults {...results} tourExpanded={tour!==null} onSolver={openSolver} onExport={props.onExport} canExport={props.canExport} design={mode==='design'}/></section>
+    {tour!==null&&<GuidedTour index={tour} sceneKey={`${mode}-${view}-${selected}`} onIndex={goTour} onClose={closeTour}/>}
   </div>;
 }

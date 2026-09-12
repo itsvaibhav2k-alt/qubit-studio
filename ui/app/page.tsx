@@ -2,6 +2,8 @@
 
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import SavedDesigns from '@/components/SavedDesigns';
+import type { ShareableDesign } from '@/lib/design-link';
 import AskLlm from '@/components/AskLlm';
 import LayoutWorkbench from '@/components/layout/LayoutWorkbench';
 import type { ViewportHandle } from '@/components/Viewport3D';
@@ -72,17 +74,26 @@ export default function Page() {
         result,
         baseline,
         selected,
+        explode,
         stale,
         error,
         goals,
         materials,
         experiments: experiments.evidence,
       }),
-    [params, result, baseline, selected, stale, error, goals, materials, experiments.evidence],
+    [params, result, baseline, selected, explode, stale, error, goals, materials, experiments.evidence],
   );
 
   const topicsArray = useMemo(() => Array.from(selectedTopics), [selectedTopics]);
   const explain = useExplain(snapshot, topicsArray);
+
+  const restoreDesign = useCallback((design: ShareableDesign) => {
+    if (!validDeviceParams(design.params) || !validExperimentGoals(design.goals)) return;
+    setParams({ ...design.params }); setGoals({ ...design.goals });
+    setMaterials({ topMaterial: design.topMaterial, baseMaterial: design.baseMaterial,
+      topColor: materialColor(design.topMaterial), baseColor: materialColor(design.baseMaterial) });
+    setMode('explore');
+  }, []);
 
   const changeParam = useCallback((key: ParamKey, value: number) => {
     if (mode !== 'explore' || !Number.isFinite(value)) return;
@@ -183,6 +194,7 @@ export default function Page() {
   return (
     <>
       <LayoutWorkbench
+        designTools={<SavedDesigns design={{ params, goals, topMaterial: materials.topMaterial, baseMaterial: materials.baseMaterial }} onRestore={restoreDesign} />}
         mode={mode} onMode={setMode} status={statusBadge}
         hiddenParts={hiddenParts} onToggleVisible={toggleVisible}
         explode={explode} onExplode={setExplode} onReset3d={() => viewportRef.current?.resetView()}

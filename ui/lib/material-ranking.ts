@@ -3,6 +3,9 @@ import type { ResonatorMaterialRecord } from './material-records.ts';
 
 export type SubstratePreference = 'any' | 'Si' | 'Al₂O₃ (sapphire)';
 
+/** Design search should optimize measured performance unless the user asks for a process tradeoff. */
+export const DEFAULT_MATERIAL_PRIORITY = 100;
+
 export const VALID_RESONATOR_STACKS = MATERIAL_RECORDS.filter(
   (record): record is ResonatorMaterialRecord =>
     record.kind === 'resonator-loss' && record.category === 'superconducting film',
@@ -28,6 +31,14 @@ export function recommendMaterialStack(
   performancePriority: number,
   substrate: SubstratePreference,
 ): ResonatorMaterialRecord {
+  return rankMaterialStacks(performancePriority, substrate)[0];
+}
+
+/** Rank every measured stack so the UI can offer alternatives, not only one winner. */
+export function rankMaterialStacks(
+  performancePriority: number,
+  substrate: SubstratePreference,
+): ResonatorMaterialRecord[] {
   const candidates = substrate === 'any'
     ? VALID_RESONATOR_STACKS
     : VALID_RESONATOR_STACKS.filter((record) => record.substrate === substrate);
@@ -39,14 +50,13 @@ export function recommendMaterialStack(
   const maxBurden = Math.max(...burdens);
   const weight = Math.min(100, Math.max(0, performancePriority)) / 100;
 
-  return candidates.reduce((best, record) => {
-    const score = (candidate: ResonatorMaterialRecord) => {
-      const loss = Math.log10(candidate.lowPowerLossMax);
-      const lossScore = maxLoss === minLoss ? 0 : (loss - minLoss) / (maxLoss - minLoss);
-      const burden = processBurden(candidate);
-      const burdenScore = maxBurden === minBurden ? 0 : (burden - minBurden) / (maxBurden - minBurden);
-      return weight * lossScore + (1 - weight) * burdenScore;
-    };
-    return score(record) < score(best) ? record : best;
-  });
+  const score = (candidate: ResonatorMaterialRecord) => {
+    const loss = Math.log10(candidate.lowPowerLossMax);
+    const lossScore = maxLoss === minLoss ? 0 : (loss - minLoss) / (maxLoss - minLoss);
+    const burden = processBurden(candidate);
+    const burdenScore = maxBurden === minBurden ? 0 : (burden - minBurden) / (maxBurden - minBurden);
+    return weight * lossScore + (1 - weight) * burdenScore;
+  };
+
+  return [...candidates].sort((a, b) => score(a) - score(b));
 }
