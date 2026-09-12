@@ -343,7 +343,9 @@ async function pageExportChecks(){
     const pad=document.querySelector('.layout-scene [data-part=capacitor]') as SVGElement;
     flushSync(()=>pad.dispatchEvent(new MouseEvent('click',{bubbles:true})));
     assert(document.querySelectorAll('.layout-scene [data-part=capacitor].is-selected').length===2,'Both pads share selection');
-    clickText('Inspect capacitor pads');await until(()=>document.querySelector('.layout-inspection-caption')?.textContent?.includes('Capacitor'),'Layout inspection entered');clickText('Right pad');
+    clickText('Inspect capacitor pads');
+    assert(document.querySelector('.layout-inspection-caption')?.textContent?.includes('Capacitor'),'Layout inspection enters in the action commit without waiting for a GPU frame');
+    clickText('Right pad');
     assert(document.querySelector('.layout-inspection-caption')?.textContent?.includes('Capacitor'),'Actual Page opens capacitor inspection');
     clickText('Return to full chip');clickText('Pin baseline');clickText('Design');
     const stressDetails=[...document.querySelectorAll('summary')].find(el=>el.textContent?.trim()==='How robust is this design?');

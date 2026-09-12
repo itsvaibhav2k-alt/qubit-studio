@@ -3,7 +3,7 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { ContactShadows, OrbitControls } from '@react-three/drei';
 import { useContext, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { ACESFilmicToneMapping, PCFShadowMap, Box3, Group, MathUtils, Mesh, Vector3, type PerspectiveCamera } from 'three';
+import { ACESFilmicToneMapping, PCFShadowMap, Group, MathUtils, Vector3, type PerspectiveCamera } from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import StudioLighting from './StudioLighting';
 import { HardwareContext } from './layout/HardwareContext';
@@ -14,6 +14,7 @@ import { ANCHORS, FRAME, PARTS_GEOMETRY } from '@/lib/chip-geometry';
 import type { Projected } from '@/lib/connector';
 import type { PartId } from '@/lib/parts';
 import { DEFAULT_COMPONENT_MATERIALS, resolveMaterial, type ComponentMaterials } from '@/lib/component-materials';
+import { projectedBounds } from '@/lib/geometry-bounds';
 
 export interface ViewportHandle {
   resetView: () => void;
@@ -35,41 +36,6 @@ const EXPLODED_DIRECTION = new Vector3(
 );
 /** Fill this fraction of the free region's limiting angle. */
 const FILL = 0.97;
-
-const box = new Box3();
-const corner = new Vector3();
-
-/**
- * Screen-space bounds (canvas px) of the visible rendered meshes under `root`. Hit volumes and
- * helper lines are excluded. Uses each mesh's current world matrix.
- */
-function projectedBounds(
-  root: Group,
-  camera: PerspectiveCamera,
-  width: number,
-  height: number,
-): { left: number; top: number; right: number; bottom: number } | null {
-  let left = Infinity;
-  let top = Infinity;
-  let right = -Infinity;
-  let bottom = -Infinity;
-  root.traverse((object) => {
-    if (!(object instanceof Mesh) || object.userData.hit || !object.visible) return;
-    box.setFromObject(object);
-    if (box.isEmpty()) return;
-    for (let i = 0; i < 8; i += 1) {
-      corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z);
-      corner.project(camera);
-      const px = ((corner.x + 1) / 2) * width;
-      const py = ((1 - corner.y) / 2) * height;
-      if (px < left) left = px;
-      if (px > right) right = px;
-      if (py < top) top = py;
-      if (py > bottom) bottom = py;
-    }
-  });
-  return Number.isFinite(left) ? { left, top, right, bottom } : null;
-}
 
 interface FramingProps {
   region: Rect | null;
@@ -198,6 +164,8 @@ function Projector({ selected, explodeRef, anchorRef, wrapperRef, assemblyRef }:
     const bounds = projectedBounds(assembly, camera as PerspectiveCamera, size.width, size.height);
     if (bounds) {
       wrapper.dataset.bounds = `${bounds.left.toFixed(1)},${bounds.top.toFixed(1)},${bounds.right.toFixed(1)},${bounds.bottom.toFixed(1)}`;
+    } else {
+      delete wrapper.dataset.bounds;
     }
   });
 
