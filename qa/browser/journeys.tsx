@@ -319,6 +319,12 @@ async function pageExportChecks(){
   };
   try {
     mount(Page);
+    // Exercise the real renderer's public performance setting on CI's software
+    // GPU; these journeys time interaction/state correctness, not GPU speed.
+    const quality=document.querySelector('button[aria-label="High detail rendering"]');
+    assert(quality?.getAttribute('aria-pressed')==='true','Actual Page defaults to high detail');
+    clickText('High detail');
+    assert(quality?.getAttribute('aria-pressed')==='false','Balanced rendering is selected through the actual toolbar');
     const exportedButton=()=>[...document.querySelectorAll('button')].find(el=>el.textContent?.trim()==='Export report') as HTMLButtonElement;
     assert(exportedButton().disabled,'Actual Page disables export before first completed result');
     const initial=await next('/api/evaluate','actual Page initial evaluation');
@@ -380,6 +386,7 @@ void evaluateChecks().then(explainChecks).then(experimentChecks).then(pageExport
   assert(checks.length===EXPECTED_JOURNEYS, `Expected ${EXPECTED_JOURNEYS} journeys; executed ${checks.length}`);
   document.getElementById('report')!.textContent=JSON.stringify({status:'passed',checks,applyCalls,renderErrors,exportedReports,
     network:Object.fromEntries([...new Set(requests.map(r=>r.route))].map(route=>[route,requests.filter(r=>r.route===route).length])),
+    renderQuality:'Balanced selected through the actual Page toolbar for software WebGL; high detail remains the production default.',
     runtime:'Locked React/ReactDOM in StrictMode; real repository Page, hooks, Inspector, DesignLab, MaterialSensitivity and AskLlm; isolated Playwright Chromium.',
     evidence:'Numerical responses were produced by the fixture-generating Python engine (see fixtures/provenance.json). Transport timing, failures and Gemini responses were controlled fixtures. No live provider calls.'},null,2);
 }).catch(error=>{
