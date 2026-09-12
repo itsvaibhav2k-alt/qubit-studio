@@ -324,6 +324,16 @@ async function pageExportChecks(){
     const initial=await next('/api/evaluate','actual Page initial evaluation');
     assert(sameParams(initial.body,fixtures.default),'Actual Page starts at documented default parameters');
     answer(initial,fixtures.default);await until(()=>!exportedButton().disabled,'Page export enabled');
+    // The lazy 3D scene compiles its physical-material shaders on first paint.
+    // Wait for real geometry before timing interactions: software WebGL on CI
+    // can otherwise start that compilation while a download Blob is being read.
+    await until(()=>{
+      const viewport=document.querySelector('.hardware-canvas') as HTMLElement | null;
+      const canvas=viewport?.querySelector('canvas');
+      const bounds=viewport?.dataset.bounds?.split(',').map(Number);
+      return canvas && canvas.width>0 && canvas.height>0 && bounds?.length===4
+        && bounds.every(Number.isFinite) && bounds[2]>bounds[0] && bounds[3]>bounds[1];
+    },'Actual Page 3D geometry is framed',45000);
     const pad=document.querySelector('.layout-scene [data-part=capacitor]') as SVGElement;
     flushSync(()=>pad.dispatchEvent(new MouseEvent('click',{bubbles:true})));
     assert(document.querySelectorAll('.layout-scene [data-part=capacitor].is-selected').length===2,'Both pads share selection');
