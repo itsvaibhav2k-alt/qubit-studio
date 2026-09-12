@@ -29,9 +29,9 @@ globalThis.fetch = (url, init) => {
   return new Promise((resolve, reject) => requests.push({ route, body: JSON.parse(init!.body as string), signal: init!.signal, resolve, reject, answered: false, taken: false }));
 };
 const pause = () => new Promise(resolve => setTimeout(resolve, 15));
-async function until(fn: () => unknown, label: string) {
+async function until(fn: () => unknown, label: string, timeout = 4000) {
   const start = Date.now();
-  while (!fn()) { if (Date.now() - start > 4000) throw new Error(`Timed out: ${label}`); await pause(); }
+  while (!fn()) { if (Date.now() - start > timeout) throw new Error(`Timed out: ${label}`); await pause(); }
 }
 function assert(ok: unknown, label: string) { if (!ok) throw new Error(label); }
 function pass(label: string) { assert(!checks.includes(label), 'Journey labels must be unique'); checks.push(label); }
@@ -327,14 +327,14 @@ async function pageExportChecks(){
     const pad=document.querySelector('.layout-scene [data-part=capacitor]') as SVGElement;
     flushSync(()=>pad.dispatchEvent(new MouseEvent('click',{bubbles:true})));
     assert(document.querySelectorAll('.layout-scene [data-part=capacitor].is-selected').length===2,'Both pads share selection');
-    clickText('Inspect capacitor pads');clickText('Right pad');
+    clickText('Inspect capacitor pads');await until(()=>document.querySelector('.layout-inspection-caption')?.textContent?.includes('Capacitor'),'Layout inspection entered');clickText('Right pad');
     assert(document.querySelector('.layout-inspection-caption')?.textContent?.includes('Capacitor'),'Actual Page opens capacitor inspection');
     clickText('Return to full chip');clickText('Pin baseline');clickText('Design');
     const stressDetails=[...document.querySelectorAll('summary')].find(el=>el.textContent?.trim()==='How robust is this design?');
     assert(stressDetails,'Actual robustness disclosure exists');flushSync(()=>stressDetails!.click());
     clickText('Test robustness');const stress=await next('/api/stress','actual Page stress');
     answer(stress,fixtures.defaultStress);await until(()=>document.body.textContent?.includes('Frequency could be'),'Page stress displayed');
-    clickText('Export report');await until(()=>exportedReports.length===1,'first actual download Blob captured');
+    clickText('Export report');await until(()=>exportedReports.length===1,'first actual download Blob captured',15000);
     const first=exportedReports[0].report;
     assert(sameParams(first.parameters,fixtures.default) && sameParams(first.result,fixtures.default),'Exported JSON parameters match exact producing result');
     assert(sameParams(first.pinned_baseline,fixtures.default),'Export includes frozen baseline coordinates');

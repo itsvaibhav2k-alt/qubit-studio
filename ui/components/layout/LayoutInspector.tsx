@@ -21,6 +21,8 @@ type Props = ComponentProps<typeof Inspector> & {
   onSolverOpen: (open: boolean) => void;
 };
 const copy = {
+  board:{name:'Carrier board',id:'PCB',role:'The carrier supports the chip and its bond contacts. It adds no electrical input to this model.',label:''},
+  package:{name:'Package & clamps',id:'PKG',role:'The machined frame and clamps hold the assembly. Use Exploded in the 3D pane to see the stack.',label:''},
   junction: { name:'Josephson junction', id:'JJ1', role:'Controls the nonlinearity of this simplified circuit.', label:'Josephson energy' },
   capacitor: { name:'Capacitor pads', id:'C1', role:'Sets the charging energy of this simplified circuit. Both pads share this parameter.', label:'Charging energy' },
   gate: { name:'Charge gate', id:'G1', role:'Sets the offset charge on the transmon island.', label:'Offset charge' },

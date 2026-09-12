@@ -1,5 +1,7 @@
 # Layout and component inspection integration
 
+Historical checkpoint for the first Layout integration. The subsequent combined product implementation is documented in [product-integration.md](product-integration.md); that work resolves the legacy-renderer alignment described below.
+
 This branch adds the reviewed Layout interface and component inspection to the cleaned application. It is based on the safety-fix checkpoint `274c337`; that checkpoint's dependency lockfile, regression harness, evaluation lifecycle, experiment store, exports and backend remain intact. The work was developed and reviewed in isolation from the active 3D implementation.
 
 ## Shared shell changes

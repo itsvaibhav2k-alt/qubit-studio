@@ -1,234 +1,279 @@
 'use client';
 
-import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
-import { Edges, Line, OrbitControls } from '@react-three/drei';
-import { useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Vector3, type PerspectiveCamera } from 'three';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { ContactShadows, OrbitControls } from '@react-three/drei';
+import { useContext, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { ACESFilmicToneMapping, PCFShadowMap, Box3, Group, MathUtils, Mesh, Vector3, type PerspectiveCamera } from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import { PART_BY_ID } from '@/lib/parts';
+import StudioLighting from './StudioLighting';
+import { HardwareContext } from './layout/HardwareContext';
+import { PART_ORDER, PartMeshes } from './Assembly';
+import { fitDistanceInRegion, sceneRadius, viewOffset } from '@/lib/camera-fit';
+import type { Rect } from '@/lib/camera-fit';
+import { ANCHORS, FRAME, PARTS_GEOMETRY } from '@/lib/chip-geometry';
+import type { Projected } from '@/lib/connector';
 import type { PartId } from '@/lib/parts';
 
 export interface ViewportHandle {
   resetView: () => void;
 }
 
-interface SolidProps {
-  id: PartId;
-  size: [number, number, number];
-  position: [number, number, number];
-  explodeY: number;
-  explode: number;
-  selected: boolean;
-  hidden: boolean;
-  metal: boolean;
-  onSelect: (id: PartId) => void;
-  color?: string;
-}
+/** Default pose: front-left, elevated, the reference's angle. Unit direction from target to camera. */
+const AZIMUTH = (-40 * Math.PI) / 180;
+const ELEVATION = (47 * Math.PI) / 180;
+const DEFAULT_DIRECTION = new Vector3(
+  Math.cos(ELEVATION) * Math.sin(AZIMUTH),
+  Math.sin(ELEVATION),
+  Math.cos(ELEVATION) * Math.cos(AZIMUTH),
+);
+/** Fill this fraction of the free region's limiting angle. */
+const FILL = 0.97;
 
-const ACCENT = '#1a6fe0';
-
-function Solid({
-  id,
-  size,
-  position,
-  explodeY,
-  explode,
-  selected,
-  hidden,
-  metal,
-  onSelect,
-  color,
-}: SolidProps) {
-  const part = PART_BY_ID[id];
-  const y = position[1] + explodeY * explode;
-
-  if (hidden) return null;
-
-  const handleClick = (event: ThreeEvent<MouseEvent>) => {
-    event.stopPropagation();
-    onSelect(id);
-  };
-
-  return (
-    <group>
-      <mesh
-        position={[position[0], y, position[2]]}
-        onClick={handleClick}
-        onPointerOver={(event) => {
-          event.stopPropagation();
-          document.body.style.cursor = 'pointer';
-        }}
-        onPointerOut={() => {
-          document.body.style.cursor = '';
-        }}
-      >
-        <boxGeometry args={size} />
-        <meshStandardMaterial
-          color={selected ? '#cfe0f8' : (color ?? part.color)}
-          metalness={metal ? 0.55 : 0.05}
-          roughness={metal ? 0.35 : 0.85}
-          emissive={selected ? ACCENT : '#000000'}
-          emissiveIntensity={selected ? 0.22 : 0}
-        />
-        <Edges
-          linewidth={selected ? 2.4 : 1}
-          threshold={18}
-          color={selected ? ACCENT : '#4a545f'}
-        />
-      </mesh>
-      {explode > 0.001 && (
-        <Line
-          points={[
-            [position[0], position[1], position[2]],
-            [position[0], y, position[2]],
-          ]}
-          color="#8b96a3"
-          lineWidth={1}
-          dashed
-          dashSize={0.02}
-          gapSize={0.02}
-        />
-      )}
-    </group>
-  );
-}
-
-/** Radius of a sphere containing the assembled chip, with margin for exploded parts. */
-const SCENE_RADIUS = 1.2;
+const box = new Box3();
+const corner = new Vector3();
 
 /**
- * Keeps the whole chip framed when the canvas changes size — switching to Split
- * halves the width, and a frustum sized for the full width clips the object.
- * Only the camera distance changes, so the current orbit orientation survives.
+ * Screen-space bounds (canvas px) of the visible rendered meshes under `root`. Hit volumes and
+ * helper lines are excluded. Uses each mesh's current world matrix.
  */
-function FitToViewport() {
-  const camera = useThree((state) => state.camera);
+function projectedBounds(
+  root: Group,
+  camera: PerspectiveCamera,
+  width: number,
+  height: number,
+): { left: number; top: number; right: number; bottom: number } | null {
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  root.traverse((object) => {
+    if (!(object instanceof Mesh) || object.userData.hit || !object.visible) return;
+    box.setFromObject(object);
+    if (box.isEmpty()) return;
+    for (let i = 0; i < 8; i += 1) {
+      corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z);
+      corner.project(camera);
+      const px = ((corner.x + 1) / 2) * width;
+      const py = ((1 - corner.y) / 2) * height;
+      if (px < left) left = px;
+      if (px > right) right = px;
+      if (py < top) top = py;
+      if (py > bottom) bottom = py;
+    }
+  });
+  return Number.isFinite(left) ? { left, top, right, bottom } : null;
+}
+
+interface FramingProps {
+  region: Rect | null;
+  explodeTarget: number;
+  /** True once the explode animation has settled, so the refinement measures final positions. */
+  settled: boolean;
+  assemblyRef: React.RefObject<Group | null>;
+  fitRef: React.RefObject<((resetPose: boolean) => void) | null>;
+}
+
+/**
+ * Overlay-aware framing. The bounding sphere is fitted to the unobstructed region and the
+ * projection is sheared so the orbit target projects to the region centre. Re-fits on canvas size,
+ * region or explode change; user zoom persists until the next of those.
+ */
+function Framing({ region, explodeTarget, settled, assemblyRef, fitRef }: FramingProps) {
+  const camera = useThree((state) => state.camera) as PerspectiveCamera;
   const size = useThree((state) => state.size);
   const controls = useThree((state) => state.controls) as OrbitControlsImpl | null;
+  // Once the user has orbited or zoomed, automatic refits only dolly OUT (never undo a zoom-out);
+  // Reset view clears the flag and restores the reference framing.
+  const userMovedRef = useRef(false);
 
   useEffect(() => {
-    if (size.width < 2 || size.height < 2 || !('isPerspectiveCamera' in camera)) return;
-    const aspect = size.width / size.height;
-    const vertical = ((camera as PerspectiveCamera).fov * Math.PI) / 180;
-    const horizontal = 2 * Math.atan(Math.tan(vertical / 2) * aspect);
-    const distance = SCENE_RADIUS / Math.sin(Math.min(vertical, horizontal) / 2);
-    const target = controls?.target ?? new Vector3();
-    const direction = camera.position.clone().sub(target);
-    if (direction.lengthSq() === 0) return;
-    camera.position.copy(target).add(direction.setLength(distance));
-    camera.updateProjectionMatrix();
-    controls?.update();
-  }, [size.width, size.height, camera, controls]);
+    if (!controls) return undefined;
+    const onEnd = () => {
+      userMovedRef.current = true;
+    };
+    controls.addEventListener('end', onEnd);
+    return () => controls.removeEventListener('end', onEnd);
+  }, [controls]);
+
+  useEffect(() => {
+    const fit = (resetPose: boolean) => {
+      if (resetPose) userMovedRef.current = false;
+      if (!('isPerspectiveCamera' in camera)) return;
+      const canvas = { x: 0, y: 0, width: size.width, height: size.height };
+      const free = region ?? canvas;
+      const radius = sceneRadius(explodeTarget, PARTS_GEOMETRY) / FILL;
+      const distance = fitDistanceInRegion(radius, camera.fov, size.height, free.width, free.height);
+      if (!Number.isFinite(distance)) return;
+      const { dx, dy } = viewOffset(canvas, free);
+      // Extra shear so the projected bounds' centre (not the orbit target) lands on the region centre.
+      let cx = 0;
+      let cy = 0;
+      const offset = () => camera.setViewOffset(size.width, size.height, -(dx + cx), -(dy + cy), size.width, size.height);
+      offset();
+      const target = controls?.target ?? new Vector3();
+      if (resetPose) target.set(0, 0, 0);
+      const direction = resetPose ? DEFAULT_DIRECTION.clone() : camera.position.clone().sub(target);
+      if (direction.lengthSq() === 0) direction.copy(DEFAULT_DIRECTION);
+      const currentDistance = direction.length();
+      const floor = (d: number) => (userMovedRef.current && !resetPose ? Math.max(d, currentDistance) : d);
+      const place = (d: number) => {
+        camera.position.copy(target).add(direction.clone().setLength(d));
+        camera.lookAt(target);
+        camera.updateMatrixWorld(true);
+        camera.updateProjectionMatrix();
+      };
+      place(floor(distance));
+      // The sphere is conservative for a flat, square object: refine size and centring against the
+      // real projected extent of the rendered meshes.
+      const assembly = assemblyRef.current;
+      if (assembly && settled) {
+        assembly.updateWorldMatrix(true, true);
+        let d = distance;
+        for (let i = 0; i < 4; i += 1) {
+          const bounds = projectedBounds(assembly, camera, size.width, size.height);
+          if (!bounds) break;
+          const w = bounds.right - bounds.left;
+          const h = bounds.bottom - bounds.top;
+          const scale = Math.max(w / free.width, h / free.height) / FILL;
+          if (!Number.isFinite(scale) || scale <= 0) break;
+          cx += free.x + free.width / 2 - (bounds.left + w / 2);
+          cy += free.y + free.height / 2 - (bounds.top + h / 2);
+          d = floor(d * scale);
+          offset();
+          place(d);
+        }
+      }
+      controls?.update();
+    };
+    fitRef.current = fit;
+    fit(false);
+  }, [size.width, size.height, region, explodeTarget, settled, camera, controls, fitRef, assemblyRef]);
 
   return null;
+}
+
+interface ProjectorProps {
+  selected: PartId | null;
+  explodeRef: React.RefObject<number>;
+  anchorRef: React.RefObject<Projected | null>;
+  wrapperRef: React.RefObject<HTMLDivElement | null>;
+  assemblyRef: React.RefObject<Group | null>;
+}
+
+const scratch = new Vector3();
+
+/**
+ * Per-frame instrumentation. Writes the selected anchor's NDC for the callout line and the
+ * projected bounds of the visible rendered meshes (hit volumes and guide lines excluded) to
+ * `data-bounds` on the wrapper, so browser QA can check the framing against real geometry.
+ */
+function Projector({ selected, explodeRef, anchorRef, wrapperRef, assemblyRef }: ProjectorProps) {
+  const camera = useThree((state) => state.camera);
+  const size = useThree((state) => state.size);
+
+  useFrame(() => {
+    if (selected) {
+      const a = ANCHORS[selected];
+      scratch.set(a.point[0], a.point[1] + a.explodeY * explodeRef.current, a.point[2]);
+      const view = scratch.clone().applyMatrix4(camera.matrixWorldInverse);
+      scratch.project(camera);
+      anchorRef.current = { x: scratch.x, y: scratch.y, z: scratch.z, w: -view.z };
+    } else {
+      anchorRef.current = null;
+    }
+
+    const wrapper = wrapperRef.current;
+    const assembly = assemblyRef.current;
+    if (!wrapper || !assembly) return;
+    const bounds = projectedBounds(assembly, camera as PerspectiveCamera, size.width, size.height);
+    if (bounds) {
+      wrapper.dataset.bounds = `${bounds.left.toFixed(1)},${bounds.top.toFixed(1)},${bounds.right.toFixed(1)},${bounds.bottom.toFixed(1)}`;
+    }
+  });
+
+  return null;
+}
+
+/** Smooths the Assembled/Exploded target; re-renders only while the value is moving. */
+function useSmoothedExplode(target: number, explodeRef: React.RefObject<number>): number {
+  const [value, setValue] = useState(target);
+  useFrame((_, delta) => {
+    const current = explodeRef.current;
+    if (Math.abs(current - target) < 0.002) {
+      if (current !== target) {
+        explodeRef.current = target;
+        setValue(target);
+      }
+      return;
+    }
+    const next = MathUtils.damp(current, target, 7, delta);
+    explodeRef.current = next;
+    setValue(next);
+  });
+  return value;
 }
 
 interface SceneProps {
   selected: PartId | null;
   hiddenParts: PartId[];
   explode: number;
+  region: Rect | null;
+  materialColors: Partial<Record<PartId,string>>;
   onSelect: (id: PartId) => void;
   controlsRef: React.RefObject<OrbitControlsImpl | null>;
-  materialColors: Partial<Record<PartId, string>>;
+  fitRef: React.RefObject<((resetPose: boolean) => void) | null>;
+  anchorRef: React.RefObject<Projected | null>;
+  wrapperRef: React.RefObject<HTMLDivElement | null>;
 }
 
-/** Illustrative chip geometry. Dimensions are exaggerated for legibility. */
-function Scene({ selected, hiddenParts, explode, onSelect, controlsRef, materialColors }: SceneProps) {
-  const hidden = (id: PartId) => hiddenParts.includes(id);
-  const common = { explode, onSelect, selected: false, hidden: false, metal: true };
-
-  const groundBars: Array<{ size: [number, number, number]; position: [number, number, number] }> = [
-    { size: [1.42, 0.02, 0.18], position: [0, -0.012, -0.44] },
-    { size: [1.42, 0.02, 0.18], position: [0, -0.012, 0.44] },
-    { size: [0.28, 0.02, 0.28], position: [-0.57, -0.012, 0.21] },
-    { size: [0.28, 0.02, 0.28], position: [-0.57, -0.012, -0.21] },
-    { size: [0.28, 0.02, 0.62], position: [0.57, -0.012, 0] },
-  ];
+function Scene({ selected, hiddenParts, explode, region, onSelect, controlsRef, fitRef, anchorRef, wrapperRef, materialColors }: SceneProps) {
+  const explodeRef = useRef(explode);
+  const assemblyRef = useRef<Group | null>(null);
+  const smooth = useSmoothedExplode(explode, explodeRef);
+  const floorY = FRAME.top - FRAME.depth + FRAME.explodeY * smooth - 0.012;
 
   return (
     <>
-      <ambientLight intensity={0.75} />
-      <directionalLight position={[2.5, 3.5, 2]} intensity={1.5} />
-      <directionalLight position={[-2, 1.5, -2.5]} intensity={0.5} />
+      <StudioLighting />
 
-      <Solid
-        {...common}
-        id="substrate"
-        size={[1.62, 0.07, 1.18]}
-        position={[0, -0.058, 0]}
-        explodeY={-0.16}
-        metal={false}
-        selected={selected === 'substrate'}
-        hidden={hidden('substrate')}
-        color={materialColors.substrate}
-      />
+      <group ref={assemblyRef}>
+        {PART_ORDER.map((id) => (
+          <PartMeshes
+            key={id}
+            id={id}
+            color={materialColors[id]}
+            selected={selected === id}
+            hidden={hiddenParts.includes(id)}
+            explode={smooth}
+            onSelect={onSelect}
+            guides
+          />
+        ))}
+      </group>
 
-      {groundBars.map((bar, index) => (
-        <Solid
-          {...common}
-          key={`ground-${index}`}
-          id="ground"
-          size={bar.size}
-          position={bar.position}
-          explodeY={0.1}
-          selected={selected === 'ground'}
-          hidden={hidden('ground')}
-          color={materialColors.ground}
-        />
-      ))}
+      <ContactShadows position={[0, floorY, 0]} scale={6} blur={2.8} opacity={0.32} far={2.5} resolution={1024} frames={Infinity} />
 
-      {[-0.2, 0.2].map((x) => (
-        <Solid
-          {...common}
-          key={`pad-${x}`}
-          id="capacitor"
-          size={[0.34, 0.028, 0.52]}
-          position={[x, 0.002, 0]}
-          explodeY={0.26}
-          selected={selected === 'capacitor'}
-          hidden={hidden('capacitor')}
-          color={materialColors.capacitor}
-        />
-      ))}
-
-      <Solid
-        {...common}
-        id="junction"
-        size={[0.07, 0.034, 0.06]}
-        position={[0, 0.005, 0]}
-        explodeY={0.42}
-        selected={selected === 'junction'}
-        hidden={hidden('junction')}
-        color={materialColors.junction}
-      />
-
-      <Solid
-        {...common}
-        id="gate"
-        size={[0.33, 0.022, 0.06]}
-        position={[-0.585, -0.001, 0]}
-        explodeY={0.26}
-        selected={selected === 'gate'}
-        hidden={hidden('gate')}
-        color={materialColors.gate}
-      />
-
-      <FitToViewport />
+      <Framing region={region} explodeTarget={explode} settled={smooth === explode} assemblyRef={assemblyRef} fitRef={fitRef} />
+      <Projector selected={selected} explodeRef={explodeRef} anchorRef={anchorRef} wrapperRef={wrapperRef} assemblyRef={assemblyRef} />
 
       <OrbitControls
         ref={controlsRef}
         makeDefault
         enablePan
         enableZoom
-        enableDamping={false}
-        minDistance={0.7}
-        maxDistance={6}
+        enableDamping
+        dampingFactor={0.12}
+        minDistance={1}
+        maxDistance={12}
+        maxPolarAngle={Math.PI * 0.62}
       />
     </>
   );
 }
 
-interface Viewport3DProps extends Omit<SceneProps, 'controlsRef'> {
+interface Viewport3DProps extends Omit<SceneProps, 'controlsRef' | 'fitRef' | 'region' | 'anchorRef' | 'wrapperRef'> {
+  /** False while the schematic-only view hides the canvas: rendering pauses. */
+  active: boolean;
   onClearSelection: () => void;
   handleRef: React.RefObject<ViewportHandle | null>;
 }
@@ -238,44 +283,55 @@ export default function Viewport3D({
   hiddenParts,
   explode,
   onSelect,
+  active: activeProp,
   onClearSelection,
   handleRef,
   materialColors,
 }: Viewport3DProps) {
+  const interaction=useContext(HardwareContext);
+  const active=interaction?.active??activeProp;
+  const select=interaction?.onSelect??onSelect;
+  const anchorRef = useRef<Projected | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
-  const [rendererKey, setRendererKey] = useState(0);
+  const fitRef = useRef<((resetPose: boolean) => void) | null>(null);
 
   useImperativeHandle(handleRef, () => ({
-    resetView: () => controlsRef.current?.reset(),
+    resetView: () => fitRef.current?.(true),
   }));
 
-  useEffect(() => () => {
-    document.body.style.cursor = '';
-  }, []);
+  useEffect(
+    () => () => {
+      document.body.style.cursor = '';
+      anchorRef.current = null;
+    },
+    [anchorRef],
+  );
 
   return (
+    <div ref={wrapperRef} className="hardware-canvas" data-selected={selected??''} data-explode={explode}>
     <Canvas
-      key={rendererKey}
-      camera={{ position: [1.75, 1.35, 2.05], fov: 38 }}
+      camera={{ position: DEFAULT_DIRECTION.clone().multiplyScalar(5).toArray(), fov: 30, near: 0.1, far: 60 }}
       dpr={[1, 2]}
+      frameloop={active ? 'always' : 'never'}
+      shadows={{ type: PCFShadowMap }}
       onPointerMissed={onClearSelection}
-      gl={{ antialias: true }}
-      onCreated={({ gl }) => {
-        gl.domElement.addEventListener('webglcontextlost', (event) => {
-          event.preventDefault();
-          window.setTimeout(() => setRendererKey((current) => current + 1), 100);
-        }, { once: true });
-      }}
+      gl={{ antialias: true, toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
       style={{ position: 'absolute', inset: 0 }}
     >
       <Scene
         selected={selected}
         hiddenParts={hiddenParts}
         explode={explode}
-        onSelect={onSelect}
-        controlsRef={controlsRef}
+        region={null}
         materialColors={materialColors}
+        onSelect={select}
+        controlsRef={controlsRef}
+        fitRef={fitRef}
+        anchorRef={anchorRef}
+        wrapperRef={wrapperRef}
       />
     </Canvas>
+    </div>
   );
 }

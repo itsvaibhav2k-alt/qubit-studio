@@ -1,6 +1,7 @@
 'use client';
 
 import { useId, type KeyboardEvent } from 'react';
+import { SUBSTRATE_PLAN, GATE_PLAN } from '@/lib/chip-plan';
 import type { PartId } from '@/lib/parts';
 import { GROUND_BOUNDARY, LEFT_ELECTRODE, METAL_OPENING, RIGHT_ELECTRODE } from '@/lib/layout-geometry';
 
@@ -49,17 +50,20 @@ export default function LayoutArtwork({ selected, hiddenParts = [], onSelect, on
       <clipPath id={id('pads')}><path d={LEFT_ELECTRODE}/><path d={RIGHT_ELECTRODE}/></clipPath>
     </defs>
     {/* Carrier: artwork context only, never an extra circuit element. */}
-    <g aria-hidden="true">
-      <rect x="80" y="58" width="840" height="514" rx="39" fill="#061c26" opacity=".5"/>
+    {visible('package') && <g {...pick('package','Package & clamps — mechanical context')}>
+      <rect className="part-outline" x="80" y="58" width="840" height="514" rx="39" fill="#061c26" opacity=".5"/>
       <rect x="80" y="48" width="840" height="514" rx="39" fill={fill('gold')} stroke="#987443" strokeWidth="2"/>
       <rect x="84" y="52" width="832" height="506" rx="36" fill={fill('gold-grain')} stroke="#ffe1a4" strokeWidth="1.1"/>
-      <rect x="112" y="82" width="776" height="446" rx="9" fill="#182b32" stroke="#a78750" strokeWidth="2"/>
-      <path d="M134 91H866L877 102V508L866 519H134L123 508V102Z" fill={fill('navy')} stroke="#71848b"/>
+      <rect className="part-outline" x="112" y="82" width="776" height="446" rx="9" fill="#182b32" stroke="#a78750" strokeWidth="2"/>
+
       {[115,885].flatMap(x => [83,527].map(y => <g key={`${x}-${y}`}><circle cx={x} cy={y} r="30" fill={fill('gold')} stroke="#ffe6ad"/><circle cx={x} cy={y} r="17.5" fill={fill('hole')} stroke="#917145" strokeWidth="1.8"/><path d={`M${x-11} ${y-11}A15 15 0 0 1 ${x+13} ${y-8}`} fill="none" stroke="#89a0a7" strokeWidth=".65"/></g>))}
       {[280,350,650,720].flatMap(x=>[64,546].map(y=><path key={`${x}-${y}`} d={`M${x-7} ${y-15}V${y+15}M${x+7} ${y-15}V${y+15}`} stroke="#846637" strokeWidth="1"/>))}
+    </g>}
+    {visible('board') && <g {...pick('board','Carrier board — chip support')}><path className="part-outline" d="M134 91H866L877 102V508L866 519H134L123 508V102Z" fill={fill('navy')} stroke="#71848b"/></g>}
+    <g aria-hidden="true">
       {[141,859].flatMap(x=>Array.from({length:23},(_,i)=><g key={`${x}-${i}`}><rect x={x-8} y={151+i*13} width="5" height="6" rx=".7" fill={fill('gold')}/><rect x={x+2} y={151+i*13} width="5" height="6" rx=".7" fill="#e5bd79"/></g>))}
     </g>
-    {visible('substrate') && <g {...pick('substrate','Substrate — continuous chip base')}><path className="part-outline" d="M177 116H823L849 142V468L823 494H177L151 468V142Z" fill={fill('navy')} stroke="#5995b5" strokeWidth="1.2"/><path d="M182 121H818L843 146V464L818 489H182L157 464V146Z" fill="none" stroke="#1175ac" strokeWidth="1"/></g>}
+    {visible('substrate') && <g {...pick('substrate','Substrate — continuous chip base')}><path className="part-outline" d={SUBSTRATE_PLAN} fill={fill('navy')} stroke="#5995b5" strokeWidth="1.2"/><path d="M182 121H818L843 146V464L818 489H182L157 464V146Z" fill="none" stroke="#1175ac" strokeWidth="1"/></g>}
     {visible('ground') && <g {...pick('ground','Ground metal — openings expose the substrate')}><path className="part-outline" d={`${GROUND_BOUNDARY} ${METAL_OPENING}`} fill="#526772" fillRule="evenodd" stroke="#bdcdd5" strokeWidth="1.5"/><path d={`${GROUND_BOUNDARY} ${METAL_OPENING}`} fill={fill('hatch')} fillRule="evenodd"/><path d="M224 151H775L795 172M224 469H775L795 448" fill="none" stroke="#f0eee1" strokeWidth=".7"/></g>}
     <g aria-hidden="true">
       {[285,355,645,715].flatMap(x=>[0,1].map(bottom=><g key={`${x}-${bottom}`} transform={bottom?'translate(0 610) scale(1 -1)':undefined}>
@@ -77,7 +81,7 @@ export default function LayoutArtwork({ selected, hiddenParts = [], onSelect, on
       </g>)}
       <g clipPath={fill('pads')} pointerEvents="none" stroke="#7e919c" strokeWidth=".6">{[350,375,397,417,436,451,465].flatMap(x=>[x,1000-x].map(v=><g key={v}><line x1={v} x2={v} y1="225" y2="397"/><line x1={v-2} x2={v-2} y1="225" y2="397" stroke="#e2e4dc"/></g>))}</g>
     </>}
-    {visible('gate') && <g {...pick('gate','Charge gate — offset charge')}><path d="M730 299H940V321H730Z" fill="#1b3441" stroke="#247aa0" strokeWidth="1"/><path className="part-outline" d="M733 304H942V316H733Z" fill={fill('gold')} stroke="#f6d797"/><path d="M736 306H940" stroke="#ffedbc" strokeWidth=".7"/><path d="M735 312H939" stroke="#ad854b" strokeWidth=".7"/><path d="M735 310H942" stroke="transparent" strokeWidth="36"/><rect x="750" y="299" width="180" height="22" fill={fill('gold-grain')} pointerEvents="none"/></g>}
+    {visible('gate') && <g {...pick('gate','Charge gate — offset charge')}><path d="M730 299H940V321H730Z" fill="#1b3441" stroke="#247aa0" strokeWidth="1"/><path className="part-outline" d={GATE_PLAN} fill={fill('gold')} stroke="#f6d797"/><path d="M736 306H940" stroke="#ffedbc" strokeWidth=".7"/><path d="M735 312H939" stroke="#ad854b" strokeWidth=".7"/><path d="M735 310H942" stroke="transparent" strokeWidth="36"/><rect x="750" y="299" width="180" height="22" fill={fill('gold-grain')} pointerEvents="none"/></g>}
     {visible('junction') && <g {...pick('junction','Josephson junction — Josephson energy')}>
       <rect x="487" y="306" width="13" height="8" fill={fill('silver')} stroke="#f3ead4" strokeWidth=".8"/><rect x="500" y="306" width="13" height="8" fill={fill('silver')} stroke="#f3ead4" strokeWidth=".8"/>
       <rect x="498" y="305" width="4" height="10" fill="#ecd08c" stroke="#f9e8b3" strokeWidth=".5"/>

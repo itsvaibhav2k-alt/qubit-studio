@@ -3,7 +3,7 @@ import { MATERIAL_RECORDS } from './material-records.ts';
 import type { DesignGoals, DeviceParams, DeviceResult } from './types.ts';
 import type { ChipSnapshot, SnapshotExperiment, SnapshotMaterials, SnapshotOutputs } from './insight-types.ts';
 
-const PART_IDS = new Set<PartId>(['junction', 'capacitor', 'gate', 'substrate', 'ground']);
+const PART_IDS = new Set<PartId>(['junction', 'capacitor', 'gate', 'substrate', 'ground', 'board', 'package']);
 const isObject = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 const numberIn = (value: unknown, min: number, max: number): value is number => typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 const shortText = (value: unknown, max: number): value is string => typeof value === 'string' && value.trim().length > 0 && value.length <= max;

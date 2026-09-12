@@ -11,6 +11,8 @@ export interface LayoutViewState {
 export interface InspectionLabel { text: string; part: PartId; anchor: [number,number]; offset: [number,number] }
 export const INITIAL_LAYOUT_VIEW: LayoutViewState = { camera: OVERVIEW_CAMERA, beforeInspection: null, inspecting: null, padFocus: 'both' };
 export const INSPECTIONS: Record<PartId, { title: string; action: string; explanation: string; region: [number,number,number,number]; labels: InspectionLabel[] }> = {
+  board:{title:'Carrier board detail',action:'Inspect carrier board',region:[240,145,390,240],explanation:'The carrier and contacts support the chip. This is illustrated packaging context, not an additional circuit.',labels:[{text:'Carrier board',part:'board',anchor:[145,250],offset:[10,-55]}]},
+  package:{title:'Package detail',action:'Inspect package',region:[210,125,360,260],explanation:'The frame and mounting holes belong to the package. Explode the 3D assembly to see the full mechanical stack.',labels:[{text:'Gold carrier frame',part:'package',anchor:[115,190],offset:[30,30]}]},
   junction: {title:'Junction detail',action:'Inspect junction',region:[500,310,270,180],explanation:'Metal opening exposes the continuous substrate; it is not a through-hole.',labels:[
     {text:'Electrode',part:'capacitor',anchor:[397,290],offset:[-45,-65]},
     {text:'JJ1 · Josephson junction',part:'junction',anchor:[500,310],offset:[30,-95]},

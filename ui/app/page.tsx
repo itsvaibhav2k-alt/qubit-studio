@@ -102,7 +102,7 @@ export default function Page() {
     });
   }, []);
 
-  const currentMaterialColors = materialPartColors(materials);
+  const currentMaterialColors = materials.topMaterial==='Al'&&materials.baseMaterial==='Si'?{}:materialPartColors(materials);
 
   const onSelectTopic = useCallback((id: TopicId) => {
     setSelectedTopics((current) => {
@@ -172,8 +172,12 @@ export default function Page() {
     const anchor = document.createElement('a');
     anchor.href = url;
     anchor.download = `qubit-studio-${Date.now()}.json`;
+    anchor.hidden = true;
+    document.body.appendChild(anchor);
     anchor.click();
-    URL.revokeObjectURL(url);
+    anchor.remove();
+    // Let browser download handlers consume the Blob before releasing its URL.
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   return (
@@ -200,9 +204,8 @@ export default function Page() {
         }}
       >
         <Viewport3D selected={selected} hiddenParts={hiddenParts} explode={explode}
-          onSelect={selectPart} onClearSelection={clearSelection}
+          onSelect={selectPart} onClearSelection={clearSelection} active
           handleRef={viewportRef} materialColors={currentMaterialColors}/>
-        <span className="viewport-note">Drag to orbit · right-drag to pan · scroll to zoom</span>
       </LayoutWorkbench>
       <AskLlm open={llmOpen} onOpenChange={setLlmOpen} topics={topicsArray} snapshot={snapshot} explain={explain}/>
     </>
