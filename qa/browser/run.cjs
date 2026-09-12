@@ -57,7 +57,9 @@ async function main() {
     await page.goto(origin, { waitUntil: 'load', timeout: 15000 });
     await page.waitForFunction(() => {
       try { return ['passed', 'FAILED'].includes(JSON.parse(document.querySelector('#report').textContent).status); } catch { return false; }
-    }, null, { timeout: 60000 });
+    // Includes lazy shader initialization plus every interaction-specific deadline
+    // on software WebGL. Individual assertions still have their own bounded waits.
+    }, null, { timeout: 120000 });
     const report = JSON.parse(await page.locator('#report').textContent());
     write('report.json', report);
     for (const [index, item] of (report.exportedReports || []).entries()) write(`actual-page-export-${index + 1}.json`, item.report);

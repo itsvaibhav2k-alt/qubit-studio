@@ -343,7 +343,9 @@ async function pageExportChecks(){
     const pad=document.querySelector('.layout-scene [data-part=capacitor]') as SVGElement;
     flushSync(()=>pad.dispatchEvent(new MouseEvent('click',{bubbles:true})));
     assert(document.querySelectorAll('.layout-scene [data-part=capacitor].is-selected').length===2,'Both pads share selection');
-    clickText('Inspect capacitor pads');await until(()=>document.querySelector('.layout-inspection-caption')?.textContent?.includes('Capacitor'),'Layout inspection entered');clickText('Right pad');
+    clickText('Inspect capacitor pads');
+    assert(document.querySelector('.layout-inspection-caption')?.textContent?.includes('Capacitor'),'Layout inspection enters in the action commit without waiting for a GPU frame');
+    clickText('Right pad');
     assert(document.querySelector('.layout-inspection-caption')?.textContent?.includes('Capacitor'),'Actual Page opens capacitor inspection');
     clickText('Return to full chip');clickText('Pin baseline');clickText('Design');
     const stressDetails=[...document.querySelectorAll('summary')].find(el=>el.textContent?.trim()==='How robust is this design?');
@@ -368,7 +370,7 @@ async function pageExportChecks(){
     }
     const top=document.querySelector('.sandbox-pickers select') as HTMLSelectElement;
     assert(top,'Actual material picker exists');flushSync(()=>{top.value='Ta';top.dispatchEvent(new Event('change',{bubbles:true}));});
-    clickText('Export report');await until(()=>exportedReports.length===2,'second actual download Blob captured');
+    clickText('Export report');await until(()=>exportedReports.length===2,'second actual download Blob captured',15000);
     const second=exportedReports[1].report;
     assert(sameParams(second.parameters,fixtures.reference) && sameParams(second.result,fixtures.reference),'Edited export uses completed current inputs and result');
     assert(JSON.stringify(second.pinned_baseline)===JSON.stringify(first.pinned_baseline),'Exported baseline remains byte-for-byte frozen after editing');

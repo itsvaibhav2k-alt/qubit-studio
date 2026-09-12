@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useRef, useState, type ComponentProps, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import { Blocks, Box, ChevronDown, CircuitBoard, Columns2, RotateCcw, SlidersHorizontal, Sparkles } from 'lucide-react';
 import GuidedTour from '@/components/GuidedTour';
 import MylaIcon from '@/components/MylaIcon';
@@ -49,10 +50,11 @@ export default function LayoutWorkbench(props:Props) {
     if(layoutView.inspecting&&layoutView.inspecting!==part){const {width,height}=inspectionSize();setLayoutView(current=>inspectPart(current,part,width,height));}
   };
   const openInspection=(part:PartId,focus:PadFocus='both')=>{
+    // The fit needs the revealed pane's dimensions. Commit this layout change
+    // before measuring instead of waiting behind a potentially expensive GPU frame.
+    if(!showLayout)flushSync(()=>setSplit(true));
     inspector.onSelect(part);aside.current?.scrollTo({top:0});
-    if(!showLayout)setSplit(true);
-    // Fit after the pane is visible, including when entry changes the pane arrangement.
-    requestAnimationFrame(()=>{const {width,height}=inspectionSize();setLayoutView(current=>inspectPart(current,part,width,height,focus));});
+    const {width,height}=inspectionSize();setLayoutView(current=>inspectPart(current,part,width,height,focus));
   };
   const goTour=(index:number)=>{
     const step=TOUR_STEPS[index]; if(!step)return;
