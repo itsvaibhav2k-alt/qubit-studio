@@ -1,5 +1,5 @@
 'use client';
-import type { ComponentProps } from 'react';
+import { useState, type ComponentProps } from 'react';
 import { ArrowLeft, Info, LockKeyhole, ScanSearch } from 'lucide-react';
 import type Inspector from '@/components/Inspector';
 import GeometryEditor from '@/components/GeometryEditor';
@@ -13,7 +13,7 @@ import { TOPICS, TOPIC_IDS } from '@/lib/explain-topics';
 import { num } from '@/lib/format';
 import MathText from '@/components/MathText';
 import { mathValue } from '@/lib/math-format';
-import type { DeviceParams } from '@/lib/types';
+import type { DeviceParams, DeviceResult } from '@/lib/types';
 import ComponentMaterialPicker from '@/components/ComponentMaterialPicker';
 import type { ComponentMaterials } from '@/lib/component-materials';
 import type { PartId } from '@/lib/parts';
@@ -28,6 +28,8 @@ type Props = ComponentProps<typeof Inspector> & {
   onSolverOpen: (open: boolean) => void;
   componentMaterials: ComponentMaterials;
   onComponentMaterialChange: (part: PartId, material: string) => void;
+  tourTarget?: string;
+  baseline?: DeviceResult | null;
 };
 const copy = {
   board:{name:'Carrier board',id:'PCB',role:'The carrier supports the chip and its bond contacts. It adds no electrical input to this model.',label:''},
@@ -40,6 +42,8 @@ const copy = {
 };
 
 export default function LayoutInspector(props: Props) {
+  const [selectedTab, setTab] = useState<'model' | 'appearance' | 'geometry'>('model');
+  const tab = props.tourTarget ? (props.tourTarget==='geometry' ? 'geometry' : props.tourTarget==='legend' ? 'appearance' : 'model') : selectedTab;
   const { selected, params, result, readOnly, candidate, candidateCurrent, inspecting, onInspect, onChange, solverOpen, onSolverOpen }=props;
   const part = selected ? PART_BY_ID[selected] : null;
   const text = selected ? copy[selected] : null;
@@ -48,13 +52,28 @@ export default function LayoutInspector(props: Props) {
   const inspectedParams = readOnly && candidate ? candidate : params;
   return <div className="layout-inspector">
     <section className="layout-editor" aria-label="Selected component inspector">
-      <div className="layout-component-id">{text?.id ?? 'SELECT A COMPONENT'}</div>
+      <div className="layout-component-id">{text ? `${text.id} / SELECTED COMPONENT` : 'SELECT A COMPONENT'}</div>
       <h1>{text?.name ?? 'Explore the chip'}</h1>
       <p className="layout-component-role">{text?.role ?? 'Select a component in the layout or circuit to inspect its model parameter.'}</p>
-      {selected && <ComponentMaterialPicker key={selected} part={selected} materials={props.componentMaterials} onChange={props.onComponentMaterialChange}/>}
+      <div className="inspector-tabs" role="tablist" aria-label="Component controls">
+        {(['model', 'appearance', 'geometry'] as const).map((item, index, items) => <button key={item} id={`inspector-tab-${item}`} role="tab" aria-selected={tab===item} aria-controls={`inspector-panel-${item}`} tabIndex={tab===item?0:-1} onClick={()=>setTab(item)} onKeyDown={event=>{
+          const next = event.key==='ArrowRight' ? items[(index+1)%items.length] : event.key==='ArrowLeft' ? items[(index+items.length-1)%items.length] : event.key==='Home' ? items[0] : event.key==='End' ? items[items.length-1] : null;
+          if(next){event.preventDefault();setTab(next);document.getElementById(`inspector-tab-${next}`)?.focus();}
+        }}>{item[0].toUpperCase()+item.slice(1)}</button>)}
+      </div>
+      <div id="inspector-panel-appearance" role="tabpanel" aria-labelledby="inspector-tab-appearance" hidden={tab!=='appearance'} className="inspector-tabbody">
+        <p className="inspector-effect appearance">Visual only · does not change results</p>
+        {selected ? <ComponentMaterialPicker key={selected} part={selected} materials={props.componentMaterials} onChange={props.onComponentMaterialChange}/> : <p className="layout-component-role">Select a component to choose its visual material.</p>}
+      </div>
+      <div id="inspector-panel-geometry" role="tabpanel" aria-labelledby="inspector-tab-geometry" hidden={tab!=='geometry'} className="inspector-tabbody">
+        <p className="inspector-effect geometry">Estimates only · apply to change inputs</p>
+        {readOnly ? <p className="layout-component-role">Return to Explore to estimate energies from geometry.</p> : <GeometryEditor key={`${params.ej_ghz}-${params.ec_ghz}`} params={params} initiallyOpen onApply={(ej_ghz, ec_ghz) => props.onApplyMaterialScenario({ ...params, ej_ghz, ec_ghz })} />}
+      </div>
+      <div id="inspector-panel-model" role="tabpanel" aria-labelledby="inspector-tab-model" hidden={tab!=='model'} className="inspector-tabbody">
+      <p className="inspector-effect">{part?.param ? 'Changes electrical results' : 'Context only · no electrical input'}</p>
       {readOnly && <p className="layout-readonly"><LockKeyhole size={15}/>{candidate ? `${candidateCurrent?'Candidate':'Outdated candidate'} values · read only` : 'Applied device · read only in Design'}</p>}
       {part?.param && <div className="layout-primary-field"><ParamField key={`${part.param}-${readOnly?'design':'explore'}`} paramKey={part.param} value={inspectedParams[part.param]} onChange={onChange} disabled={readOnly} label={text?.label}/><div className="layout-field-bounds"><span><MathText math={`${PARAMS[part.param].min}`} /></span><span><MathText text={`${PARAMS[part.param].max} ${PARAMS[part.param].unit}`} /></span></div></div>}
-      {selected && <button className="btn primary layout-inspect-action" onClick={onInspect}>{inspecting?<ArrowLeft size={18}/>:<ScanSearch size={18}/>} {inspecting?'Return to full chip':INSPECTIONS[selected].action}</button>}
+      {part?.param && <p className="inspector-helper">This input updates the calculation. Visual material choices are independent.</p>}
       {!part?.modeled && part && <p className="layout-context-note">Context only · no editable model input.</p>}
       <div className="layout-editor-footer"><span><Info size={14}/> Effective model parameters</span><details className="tech"><summary>More detail</summary><div className="body">
         {part?.param && <p>{PARAMS[part.param].meaning}</p>}
@@ -64,14 +83,15 @@ export default function LayoutInspector(props: Props) {
         <details className="tech"><summary>Choose and compare materials</summary><MaterialSensitivity onAsk={props.onSelectTopic} session={props.session} params={params} result={result} onApply={props.onApplyMaterialScenario} onMaterialsChange={props.onMaterialsChange} topMaterial={props.materials.topMaterial} baseMaterial={props.materials.baseMaterial}/></details>
         <details className="tech"><summary>Explanation topics</summary><div className="row-actions">{TOPIC_IDS.map(id => <button type="button" className="btn" key={id} aria-pressed={props.selectedTopics.has(id)} onClick={() => props.onSelectTopic(id)}>{TOPICS[id].label}</button>)}</div></details>
       </div></details></div>
+      </div>
+      {selected && <button className="btn layout-inspect-action" onClick={onInspect}>{inspecting?<ArrowLeft size={16}/>:<ScanSearch size={16}/>} {inspecting?'Return to full chip':INSPECTIONS[selected].action}</button>}
     </section>
-    {!readOnly && <GeometryEditor key={`${params.ej_ghz}-${params.ec_ghz}`} params={params} onApply={(ej_ghz, ec_ghz) => props.onApplyMaterialScenario({ ...params, ej_ghz, ec_ghz })} />}
     <details className="layout-solver tech" open={solverOpen} onToggle={event=>onSolverOpen(event.currentTarget.open)}>
       <summary>Solver settings</summary><div className="body"><ParamField paramKey="ncut" value={params.ncut} onChange={onChange} disabled={readOnly}/><p>{PARAMS.ncut.meaning}</p>{readOnly&&<p>Return to Explore to change numerical settings.</p>}</div>
     </details>
     {readOnly && <section className="layout-design-tools" aria-label="Existing Design workflow">
       {candidate && <p className="layout-candidate-scope">The inspector shows the {candidateCurrent?'current':'outdated'} {alternative?'selected alternative':'recommendation'}. The chip and results remain the applied device until you choose “Use variables + materials”.</p>}
-      <DesignLab session={props.session} params={params} result={result} goals={props.goals} onGoalsChange={props.onGoalsChange} onApply={props.onApplyMaterialScenario} onMaterialsChange={props.onMaterialsChange} currentMaterials={props.materials}/>
+      <DesignLab baseline={props.baseline} session={props.session} params={params} result={result} goals={props.goals} onGoalsChange={props.onGoalsChange} onApply={props.onApplyMaterialScenario} onMaterialsChange={props.onMaterialsChange} currentMaterials={props.materials}/>
     </section>}
   </div>;
 }

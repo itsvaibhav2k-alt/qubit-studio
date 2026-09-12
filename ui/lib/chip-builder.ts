@@ -1,3 +1,6 @@
+import { DEFAULT_GEOMETRY_ASSUMPTIONS, ecFromCapacitorArea, ejFromJunctionArea } from './geometry-model.ts';
+import { clampParam } from './params.ts';
+
 export type BuilderShape = 'rectangle' | 'circle' | 'cross' | 'stepped' | 'meander' | 'junction' | 'cutout';
 export type BuilderRole = 'capacitor' | 'junction' | 'control' | 'resonator' | 'ground' | 'visual';
 
@@ -177,6 +180,20 @@ export function designWarnings(design: ChipBuilderDesign): string[] {
   return warnings;
 }
 
+/** The builder feeds the existing bounded, fixed-transmon teaching model. */
+export function builderElectricalModel(design: ChipBuilderDesign) {
+  const junctions = design.parts.filter(part => part.role === 'junction');
+  const capacitors = design.parts.filter(part => part.role === 'capacitor');
+  if (!junctions.length || !capacitors.length) return null;
+  const modeled = [junctions[0], ...capacitors];
+  if (modeled.some(part => !Number.isFinite(part.areaUm2) || (part.areaUm2 ?? 0) <= 0)) return null;
+  const ej = ejFromJunctionArea(junctions[0].areaUm2!, DEFAULT_GEOMETRY_ASSUMPTIONS.criticalCurrentDensityAcm2);
+  const ec = ecFromCapacitorArea(capacitors.reduce((sum, part) => sum + part.areaUm2!, 0), DEFAULT_GEOMETRY_ASSUMPTIONS.capacitanceDensityFfUm2);
+  if (!Number.isFinite(ej) || !Number.isFinite(ec) || ej <= 0 || ec <= 0) return null;
+  const ejGhz = clampParam('ej_ghz', ej), ecGhz = clampParam('ec_ghz', ec);
+  return { ejGhz, ecGhz, bounded: ejGhz !== ej || ecGhz !== ec, junctionCount: junctions.length };
+}
+
 export function validBuilderDesign(value: unknown): value is ChipBuilderDesign {
   if (!value || typeof value !== 'object') return false;
   const design = value as ChipBuilderDesign;
@@ -187,11 +204,22 @@ export function validBuilderDesign(value: unknown): value is ChipBuilderDesign {
     && Number.isFinite(design.chipHeight) && design.chipHeight >= 200 && design.chipHeight <= 5000
     && Number.isFinite(design.grid) && design.grid >= 1 && design.grid <= 100
     && Array.isArray(design.parts) && design.parts.length <= 500 && Array.isArray(design.connections) && design.connections.length <= 1000
-    && design.parts.every(part => typeof part.id === 'string' && typeof part.name === 'string' && Number.isFinite(part.x) && Number.isFinite(part.y)
+    && design.parts.every(part => part !== null && typeof part === 'object'
+      && typeof part.id === 'string' && part.id.length > 0 && typeof part.name === 'string' && Number.isFinite(part.x) && Number.isFinite(part.y)
+      && typeof part.templateId === 'string' && typeof part.explanation === 'string' && typeof part.layer === 'string'
+      && typeof part.material === 'string' && typeof part.custom === 'boolean'
+      && typeof part.sourceUrl === 'string' && (part.sourceUrl === '' || /^https?:\/\//i.test(part.sourceUrl))
+      && Number.isInteger(part.ports) && part.ports >= 0 && part.ports <= 4
+      && (part.areaUm2 === undefined || (Number.isFinite(part.areaUm2) && part.areaUm2 > 0))
       && shapes.includes(part.shape) && roles.includes(part.role) && Number.isFinite(part.width) && Number.isFinite(part.height)
       && Number.isFinite(part.rotation) && part.width >= 1 && part.width <= 5000 && part.height >= 1 && part.height <= 5000)
-    && design.connections.every(connection => typeof connection.id === 'string' && Number.isInteger(connection.from?.port) && Number.isInteger(connection.to?.port)
-      && design.parts.some(part => part.id === connection.from.partId) && design.parts.some(part => part.id === connection.to.partId));
+    && new Set(design.parts.map(part => part.id)).size === design.parts.length
+    && design.connections.every(connection => connection !== null && typeof connection === 'object'
+      && typeof connection.id === 'string' && connection.id.length > 0
+      && Number.isInteger(connection.from?.port) && Number.isInteger(connection.to?.port)
+      && design.parts.some(part => part.id === connection.from.partId && connection.from.port >= 0 && connection.from.port < part.ports)
+      && design.parts.some(part => part.id === connection.to.partId && connection.to.port >= 0 && connection.to.port < part.ports))
+    && new Set(design.connections.map(connection => connection.id)).size === design.connections.length;
 }
 
 export function createStarterDesign(): ChipBuilderDesign {

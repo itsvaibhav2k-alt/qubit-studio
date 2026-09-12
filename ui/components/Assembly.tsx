@@ -10,6 +10,8 @@ import type { PartId } from '@/lib/parts';
 import { DEFAULT_COMPONENT_MATERIALS, resolveMaterial, type MaterialProfile } from '@/lib/component-materials';
 import { planContour, LEFT_ELECTRODE, RIGHT_ELECTRODE, SUBSTRATE_PLAN, TOP_GROUND_PLAN, GATE_PLAN } from '@/lib/chip-plan';
 
+import { BOND_COUNT, BOND_FINISH, bondPosition, bondPoints, FILM_LAUNCHES, PERFORATIONS, JUNCTION_ELECTRODE, JUNCTION_OVERLAP } from '@/lib/chip-detail';
+
 export const ACCENT = '#1a6fe0';
 
 /** Illustrative appearance only. None of these values enter the calculation. */
@@ -276,16 +278,13 @@ function useGroundTexture(): CanvasTexture | null {
     ctx.closePath(); ctx.clip();
     for (let side = 0; side < 4; side++) {
       ctx.save(); ctx.rotate(side * Math.PI / 2);
-      for (let i = 0; i < 64; i++) {
-        const t = (i / 63 - 0.5), x = t * 1740;
-        ctx.fillRect(x - 4.5, 936, 9, 38);
-        ctx.fillRect(x - 3, 904, 6, 14);
-        // Parallel launch, 45-degree shoulder, then a tapered inner fan.
-        const shoulder = 825 - Math.abs(t) * 120;
-        const innerX = t * 1280, innerY = 570 + Math.abs(t) * 110;
-        ctx.lineWidth = i % 8 === 0 ? 2.2 : 1.4;
-        ctx.beginPath(); ctx.moveTo(x, 931); ctx.lineTo(x, shoulder);
-        ctx.lineTo(innerX, innerY); ctx.lineTo(innerX, innerY - 32); ctx.stroke();
+      for (const launch of FILM_LAUNCHES) {
+        ctx.fillRect(launch.x - 4.5, 936, 9, 38);
+        ctx.fillRect(launch.x - 3, 904, 6, 14);
+        ctx.lineWidth = launch.width;
+        ctx.beginPath();
+        launch.points.forEach(([x,y], i) => i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y));
+        ctx.stroke();
       }
       ctx.lineWidth = 2; ctx.strokeRect(-895, 890, 1790, 101);
       ctx.restore();
@@ -525,9 +524,9 @@ function PackageInserts() {
 function LidDetails() {
   const lands = useMemo(() => {
     const pieces = [];
-    for (let side = 0; side < 4; side++) for (let i = 0; i < 46; i++) {
+    for (let side = 0; side < 4; side++) for (let i = 0; i < BOND_COUNT; i++) {
       const pad = new BoxGeometry(0.009, 0.002, 0.043);
-      pad.translate((-0.47 + i * 0.94 / 45) * 1.05 * DIE_SCALE, PLATE.top + 0.001, PLATE.window / 2 + 0.040);
+      pad.translate(bondPosition(i) * 1.05 * DIE_SCALE, PLATE.top + 0.001, PLATE.window / 2 + 0.040);
       pad.rotateY(side * Math.PI / 2); pieces.push(pad);
     }
     const geometry = mergeGeometries(pieces); pieces.forEach(g => g.dispose()); return geometry;
@@ -551,7 +550,7 @@ function LidDetails() {
     const map = new CanvasTexture(canvas); map.colorSpace = SRGBColorSpace; map.anisotropy = 16; return map;
   }, []);
   return <>
-    <mesh geometry={lands}><meshPhysicalMaterial color="#d4b373" roughness={0.3} metalness={1}/></mesh>
+    <mesh geometry={lands}><meshPhysicalMaterial color={BOND_FINISH.land} roughness={0.3} metalness={1}/></mesh>
     {/* Lettering spans the lid's aperture. Its transparent pixels must not intercept die picks. */}
     <mesh position-y={PLATE.top + 0.0003} rotation-x={-Math.PI/2} raycast={() => null}>
       <planeGeometry args={[PLATE.size,PLATE.size]}/><meshStandardMaterial map={engraving} transparent depthWrite={false} roughness={0.65} polygonOffset polygonOffsetFactor={-1}/>
@@ -780,13 +779,8 @@ export function Substrate({ selected, hidden, explode, onSelect, guides }: Omit<
 function BondWires() {
   const geometry = useMemo(() => {
     const wires = [];
-    for (let side = 0; side < 4; side++) for (let i = 0; i < 46; i++) {
-      const t = -0.47 + i * 0.94 / 45;
-      const curve = new CatmullRomCurve3([
-        new Vector3(t, 0.008, CHIP.size / 2 - 0.022),
-        new Vector3(t * 1.015, 0.051 + Math.sin(i * 1.7 + side) * 0.003, CHIP.size / 2 + 0.026),
-        new Vector3(t * 1.05, PLATE.top + 0.003, (PLATE.window / 2 + 0.028) / DIE_SCALE),
-      ]);
+    for (let side = 0; side < 4; side++) for (let i = 0; i < BOND_COUNT; i++) {
+      const curve = new CatmullRomCurve3(bondPoints(i, side).map(p => new Vector3(...p)));
       const wire = new TubeGeometry(curve, 26, 0.00115, 8, false);
       wire.rotateY(side * Math.PI / 2); wires.push(wire);
     }
@@ -794,8 +788,8 @@ function BondWires() {
   }, []);
   const feet = useMemo(() => {
     const pieces = [];
-    for (let side = 0; side < 4; side++) for (let i = 0; i < 46; i++) {
-      const t = -0.47 + i * 0.94 / 45;
+    for (let side = 0; side < 4; side++) for (let i = 0; i < BOND_COUNT; i++) {
+      const t = bondPosition(i);
       // Flattened bonds are illustrative attachment detail, not electrical geometry.
       for (const [x, y, z] of [
         [t, 0.005, CHIP.size / 2 - 0.022],
@@ -809,8 +803,8 @@ function BondWires() {
     const merged = mergeGeometries(pieces); pieces.forEach(g => g.dispose()); return merged;
   }, []);
   return <>
-    <mesh geometry={geometry} castShadow><meshPhysicalMaterial color="#d7b579" metalness={1} roughness={0.24} /></mesh>
-    <mesh geometry={feet} receiveShadow><meshPhysicalMaterial color="#d6b77a" metalness={1} roughness={0.31} /></mesh>
+    <mesh geometry={geometry} castShadow><meshPhysicalMaterial color={BOND_FINISH.wire} metalness={1} roughness={0.24} /></mesh>
+    <mesh geometry={feet} receiveShadow><meshPhysicalMaterial color={BOND_FINISH.foot} metalness={1} roughness={0.31} /></mesh>
   </>;
 }
 
@@ -835,10 +829,10 @@ function useGroundPerforations() {
     const ctx = canvas.getContext('2d'); if (!ctx) return null;
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 2048, 2048);
     ctx.fillStyle = '#000';
-    for (let y = 150; y < 1898; y += 24) for (let x = 150; x < 1898; x += 24) {
-      ctx.fillRect(x, y, 5, 5);
+    for (let y = PERFORATIONS.start; y < PERFORATIONS.end; y += PERFORATIONS.pitch) for (let x = PERFORATIONS.start; x < PERFORATIONS.end; x += PERFORATIONS.pitch) {
+      ctx.fillRect(x, y, PERFORATIONS.size, PERFORATIONS.size);
     }
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 22; ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = PERFORATIONS.border; ctx.lineJoin = 'round';
     for (const sign of [-1, 1]) {
       ctx.beginPath();
       planContour(TOP_GROUND_PLAN).forEach(([x,z],i) => {
@@ -878,9 +872,8 @@ export function Capacitor({ selected, hidden, explode, onSelect, guides }: Omit<
 
 function electrodeGeometry() {
   const shape = new Shape();
-  shape.moveTo(-0.034, -0.011); shape.lineTo(-0.003, -0.011);
-  shape.lineTo(-0.003, -0.005); shape.lineTo(0.013, -0.005);
-  shape.lineTo(0.013, 0.007); shape.lineTo(-0.034, 0.007); shape.closePath();
+  JUNCTION_ELECTRODE.forEach(([x,y],i) => i === 0 ? shape.moveTo(x,y) : shape.lineTo(x,y));
+  shape.closePath();
   return new ExtrudeGeometry(shape, {depth:0.005, bevelEnabled:true, bevelSize:0.0004, bevelThickness:0.0004, bevelSegments:2});
 }
 
@@ -893,11 +886,11 @@ export function Junction({ selected, hidden, explode, onSelect, guides }: Omit<P
         <Material kind="silver" selected={selected} />
         {selected && <Edges color={ACCENT} lineWidth={1.2} />}
       </mesh>
-      <mesh position={[0, 0.0145, 0.002]}>
-        <boxGeometry args={[0.024, 0.0014, 0.022]} />
-        <meshPhysicalMaterial color="#b9b5cb" metalness={0} roughness={0.46} clearcoat={0.16} />
+      <mesh position={[0, 0.0145, JUNCTION_OVERLAP.z]}>
+        <boxGeometry args={[JUNCTION_OVERLAP.width, 0.0014, JUNCTION_OVERLAP.depth]} />
+        <meshPhysicalMaterial color={JUNCTION_OVERLAP.color} metalness={0} roughness={0.46} clearcoat={0.16} />
       </mesh>
-      <mesh geometry={electrode} rotation={[-Math.PI / 2, 0, Math.PI]} position={[0, 0.016, 0.003]} castShadow>
+      <mesh geometry={electrode} rotation={[-Math.PI / 2, 0, Math.PI]} position={[0, 0.016, JUNCTION_OVERLAP.upperZ]} castShadow>
         <Material kind="silver" selected={selected} />
         {selected && <Edges color={ACCENT} lineWidth={1.2} />}
       </mesh>

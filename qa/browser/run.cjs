@@ -27,11 +27,17 @@ async function main() {
     }
     await require('./build.cjs')(output, negativeControl);
     const allowedFiles = new Set(fs.readdirSync(output).filter(name => /\.(js|html)$/.test(name)));
+    // The real imported workspace stylesheet requests this checked-in font.
+    // Keep the harness offline: serve only this explicit local asset.
+    const localAssets = new Map([
+      ['fonts/instrument-sans/InstrumentSans-Variable.ttf', path.join(output, 'fonts/instrument-sans/InstrumentSans-Variable.ttf')],
+    ]);
+    for (const name of localAssets.keys()) allowedFiles.add(name);
     server = http.createServer((request, response) => {
       const name = request.url === '/' ? 'index.html' : request.url?.slice(1);
       if (!allowedFiles.has(name)) { response.writeHead(404).end(); return; }
-      response.setHeader('Content-Type', name.endsWith('.html') ? 'text/html' : 'application/javascript');
-      response.end(fs.readFileSync(path.join(output, name)));
+      response.setHeader('Content-Type', name.endsWith('.html') ? 'text/html' : name.endsWith('.ttf') ? 'font/ttf' : 'application/javascript');
+      response.end(fs.readFileSync(localAssets.get(name) || path.join(output, name)));
     });
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
@@ -57,7 +63,9 @@ async function main() {
     await page.goto(origin, { waitUntil: 'load', timeout: 15000 });
     await page.waitForFunction(() => {
       try { return ['passed', 'FAILED'].includes(JSON.parse(document.querySelector('#report').textContent).status); } catch { return false; }
-    }, null, { timeout: 60000 });
+    // Includes lazy shader initialization plus every interaction-specific deadline
+    // on software WebGL. Individual assertions still have their own bounded waits.
+    }, null, { timeout: 120000 });
     const report = JSON.parse(await page.locator('#report').textContent());
     write('report.json', report);
     for (const [index, item] of (report.exportedReports || []).entries()) write(`actual-page-export-${index + 1}.json`, item.report);

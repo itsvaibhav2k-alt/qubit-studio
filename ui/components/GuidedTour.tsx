@@ -5,13 +5,14 @@ import MathText from '@/components/MathText';
 import MylaIcon from '@/components/MylaIcon';
 import { createTourDisclosures } from '@/lib/tour-disclosures';
 import { TOUR_TARGETS } from '@/lib/tour-targets';
-import { TOUR_STEPS } from '@/lib/guided-tour';
+import { TOUR_STEPS, type TourStep } from '@/lib/guided-tour';
 
 interface GuidedTourProps {
   index: number;
   sceneKey: string;
   onIndex: (index: number) => void;
   onClose: () => void;
+  steps?: TourStep[];
 }
 
 const POP_W = 380;
@@ -32,8 +33,8 @@ function place(rect: DOMRect | null, width: number, height: number) {
   return { left, top };
 }
 
-export default function GuidedTour({ index, sceneKey, onIndex, onClose }: GuidedTourProps) {
-  const step = TOUR_STEPS[index];
+export default function GuidedTour({ index, sceneKey, onIndex, onClose, steps = TOUR_STEPS }: GuidedTourProps) {
+  const step = steps[index];
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState({ left: 24, top: 72 });
   const [spot, setSpot] = useState<DOMRect | null>(null);
@@ -84,7 +85,7 @@ export default function GuidedTour({ index, sceneKey, onIndex, onClose }: Guided
     return () => { window.removeEventListener('keydown', key, true); opener?.focus(); };
   }, [onClose]);
   if (!step) return null;
-  const last = index === TOUR_STEPS.length - 1;
+  const last = index === steps.length - 1;
 
   return (
     <>
@@ -113,7 +114,7 @@ export default function GuidedTour({ index, sceneKey, onIndex, onClose }: Guided
           </div>
         </div>
         <p className="tour-progress">
-          {index + 1} / {TOUR_STEPS.length}
+          {index + 1} / {steps.length}
         </p>
         <article className="ask-answer">
           {step.body.split('\n').filter(Boolean).map((para, i) => (

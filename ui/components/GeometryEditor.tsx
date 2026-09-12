@@ -18,6 +18,7 @@ import type { DeviceParams } from '@/lib/types';
 interface GeometryEditorProps {
   params: DeviceParams;
   onApply: (ejGhz: number, ecGhz: number) => void;
+  initiallyOpen?: boolean;
 }
 
 const CAPACITOR_AREA_MIN = capacitorAreaFromEc(
@@ -33,7 +34,7 @@ function capacitorAreaFromSlider(value: string): number {
   return Math.exp(Number(value));
 }
 
-export default function GeometryEditor({ params, onApply }: GeometryEditorProps) {
+export default function GeometryEditor({ params, onApply, initiallyOpen = false }: GeometryEditorProps) {
   const [junctionArea, setJunctionArea] = useState(() =>
     junctionAreaFromEj(params.ej_ghz, DEFAULT_GEOMETRY_ASSUMPTIONS.criticalCurrentDensityAcm2),
   );
@@ -48,7 +49,7 @@ export default function GeometryEditor({ params, onApply }: GeometryEditorProps)
 
   const canApply = validDeviceParams({ ...params, ej_ghz: nextEj, ec_ghz: nextEc });
   return (
-    <details className="tech geometry-editor" data-tour="geometry">
+    <details className="tech geometry-editor" data-tour="geometry" open={initiallyOpen || undefined}>
       <summary>Shape the junction and capacitor</summary>
       <div className="body">
         <p className="geometry-intro">Explore how physical size could affect <MathText math="E_J" /> and <MathText math="E_C" /> using two stated assumptions.</p>

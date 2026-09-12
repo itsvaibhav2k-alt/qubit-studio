@@ -45,10 +45,6 @@ export default function Inspector({
   onGoalsChange,
   onMaterialsChange,
   materials,
-  selectedTopics,
-  onSelectTopic: _onSelectTopic,
-  onClearTopics: _onClearTopics,
-  onAskLlm: _onAskLlm,
 }: InspectorProps) {
   const part = selected ? PART_BY_ID[selected] : null;
   const [tab, setTab] = useState<'edit' | 'experiment' | 'materials'>('edit');

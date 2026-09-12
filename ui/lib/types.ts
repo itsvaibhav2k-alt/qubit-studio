@@ -42,7 +42,7 @@ export interface DesignGoals {
   max_dispersion_khz: number;
 }
 
-/** The engine's metrics() summaries do not contain an evaluation curve or cutoff. */
+/** Numerical summaries omit the evaluation curve; candidates also carry producing cutoff metadata. */
 export type DeviceMetrics = Pick<DeviceResult,
   'ej_ghz' | 'ec_ghz' | 'ng' | 'ratio' | 'raw_levels_ghz' | 'levels_ghz'
   | 'f01_ghz' | 'f12_ghz' | 'alpha_mhz' | 'anharmonicity_mhz'
@@ -50,6 +50,10 @@ export type DeviceMetrics = Pick<DeviceResult,
   | 'critical_current_na' | 'total_capacitance_ff'>;
 
 export interface SearchCandidate extends DeviceMetrics {
+  candidate_id?: string;
+  ncut?: number;
+  model?: string;
+  model_version?: string;
   feasible: boolean;
   margins: Record<string, number>;
   violations: string[];
@@ -58,7 +62,7 @@ export interface SearchCandidate extends DeviceMetrics {
 export interface SearchResult {
   model: string;
   model_version: string;
-  request: Record<string, number>;
+  request: Record<string, number | DeviceParams | null>;
   status: 'feasible' | 'infeasible';
   selected: SearchCandidate | null;
   candidates: SearchCandidate[];
@@ -66,6 +70,16 @@ export interface SearchResult {
   feasible_count: number;
   selection_rule: string;
   optimality_scope: string;
+  selection_evidence?: {
+    kind: 'higher_a_rejected' | 'grid_boundary' | 'evaluated_maximum' | 'infeasible';
+    higher_a_count: number;
+    higher_a_rejections: Array<{ reason: string; count: number }>;
+    selected_at_ratio_boundary: 'lower' | 'upper' | null;
+  };
+  baseline_evaluation?: { params: DeviceParams; assessment: SearchCandidate } | null;
+  frequency_tolerance_ghz?: number;
+  charge_budget_buffer_khz?: number;
+  comparison_resolution_mhz?: number;
   dispersion_resolution_khz: number;
   elapsed_ms: number;
 }

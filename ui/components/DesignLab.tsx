@@ -19,6 +19,7 @@ import type {
 } from '@/lib/types';
 
 interface DesignLabProps {
+  baseline?: DeviceResult | null;
   params: DeviceParams;
   result: DeviceResult | null;
   goals: DesignGoals;
@@ -38,6 +39,7 @@ export default function DesignLab({
   onApply,
   onMaterialsChange,
   currentMaterials,
+  baseline,
 }: DesignLabProps) {
   const [materialChoiceId, setMaterialChoiceId] = useState<string | null>(null);
   const { variation, flux, asymmetry, materialPriority, substratePreference } = session.controls;
@@ -65,6 +67,11 @@ export default function DesignLab({
   const passingCandidates = search?.candidates.filter(item => item.feasible) ?? [];
   const completeCombinationCount = passingCandidates.length * rankedStacks.length;
   const selectedMaterialRank = rankedStacks.findIndex(stack => stack.id === recommendedStack.id) + 1;
+  const selectionEvidence = search?.selection_evidence;
+  const assessedBaseline = search?.baseline_evaluation;
+  const baselineAssessmentCurrent = !!baseline && !!assessedBaseline && session.search.current
+    && (['ej_ghz','ec_ghz','ng','ncut'] as const).every(key=>baseline[key]===assessedBaseline.params[key]);
+  const constraintName = (reason:string) => ({charge_budget_khz:'charge sensitivity limit',anharmonicity_floor_mhz:'minimum level separation',frequency_tolerance_ghz:'frequency tolerance',ej_min_ghz:'minimum junction energy',ej_max_ghz:'maximum junction energy',ec_min_ghz:'minimum charging energy',ec_max_ghz:'maximum charging energy'}[reason] ?? reason.replaceAll('_',' '));
   const updateGoal = (key: keyof DesignGoals, value: number) => onGoalsChange({ ...goals, [key]: value });
   const run = session.run;
   const error = session.search.error ?? session.stress.error ?? session.tunable.error;
@@ -106,10 +113,11 @@ export default function DesignLab({
 
       <section className="design-goals" aria-labelledby="design-goals-title">
         <div className="design-goals-heading"><div><strong id="design-goals-title">The three design goals</strong><small>The search must satisfy all three.</small></div><span><MathText math="3/3" /></span></div>
-        <label className="design-goal-card" htmlFor="design-target-frequency">
+        <label className="design-goal-card goal-primary" htmlFor="design-target-frequency">
           <span className="design-goal-name"><b><MathText math="f_{01}" /></b><span><strong>Operating frequency</strong><small>How fast the qubit changes state.</small></span></span>
           <output><MathText math={mathValue(goals.target_ghz, 1, 'GHz')} /></output>
           <input id="design-target-frequency" aria-label="Target operating frequency" aria-invalid={!Number.isFinite(goals.target_ghz) || goals.target_ghz < 3 || goals.target_ghz > 8} aria-describedby="design-target-help design-search-validation" type="range" min="3" max="8" step="0.1" value={Number.isFinite(goals.target_ghz) ? goals.target_ghz : ''} onChange={(event) => updateGoal('target_ghz', numericExperimentInput(event.target.value))} />
+          <input aria-label="Target operating frequency value" type="number" min="3" max="8" step="0.1" value={Number.isFinite(goals.target_ghz) ? goals.target_ghz : ''} aria-invalid={!Number.isFinite(goals.target_ghz) || goals.target_ghz < 3 || goals.target_ghz > 8} onChange={event=>updateGoal('target_ghz',numericExperimentInput(event.target.value))} />
           <small id="design-target-help"><RichMathText>Choose 3–8 GHz.</RichMathText></small>
         </label>
         <label className="design-goal-card">
@@ -158,7 +166,16 @@ export default function DesignLab({
             <div className="lab-result" aria-live="polite">
               <span className={`pill ${session.search.current || candidateAlreadyApplied ? 'ok' : candidate ? '' : 'no'}`}>{session.search.current ? candidate ? '✓ Found a design that passes' : 'No design passed these rules' : candidateAlreadyApplied ? '✓ Electrical values applied · materials can still be changed' : 'Outdated result — rerun search'}</span>
               <p>The app checked <MathText math={`${search.evaluated_count}`} /> options; <MathText math={`${search.feasible_count}`} /> passed every rule.</p>
-              <TradeoffChart candidates={search.candidates} selected={candidate} onSelect={session.chooseCandidate} />
+              <TradeoffChart candidates={search.candidates} selected={candidate} recommended={search.selected} applied={result} baseline={baseline} current={session.search.current} onSelect={session.chooseCandidate} />
+              {selectionEvidence&&<details className="tech search-selection-evidence"><summary>Why this recommendation?</summary><div className="body">
+                <p>{selectionEvidence.kind==='higher_a_rejected'?`${selectionEvidence.higher_a_count} evaluated points had higher level separation but failed at least one constraint.`:selectionEvidence.kind==='grid_boundary'?`The recommendation lies at the ${selectionEvidence.selected_at_ratio_boundary} ratio boundary of the evaluated grid.`:selectionEvidence.kind==='infeasible'?'No evaluated point met all constraints. Inspect rejected points in the graph to see which limits failed.':'The recommendation has the highest level separation among the passing evaluated points.'}</p>
+                {selectionEvidence.higher_a_rejections.length>0&&<ul>{selectionEvidence.higher_a_rejections.map(item=><li key={item.reason}>{constraintName(item.reason)}: {item.count} rejected points</li>)}</ul>}
+                <p>Optimality applies to the evaluated grid only.</p>
+              </div></details>}
+              {baseline&&<section className="search-baseline-assessment" aria-label="Baseline eligibility"><strong>Frozen baseline against these goals</strong>
+                {baselineAssessmentCurrent&&assessedBaseline?<p>{assessedBaseline.assessment.feasible?'Baseline qualifies under the current search requirements.':`Baseline fails: ${assessedBaseline.assessment.violations.map(constraintName).join('; ')}.`}</p>:<p>Rerun search to assess this baseline against the current requirements.</p>}
+                {baselineAssessmentCurrent&&assessedBaseline&&candidate&&<p>Selected candidate minus baseline: {num(candidate.anharmonicity_mhz-assessedBaseline.assessment.anharmonicity_mhz,1)} MHz level separation; {num(candidate.dispersion_upper_khz-assessedBaseline.assessment.dispersion_upper_khz,3)} kHz charge bound. These differences describe trade-offs.</p>}
+              </section>}
               {candidate && <>
                 <div className="recommend-block">
                   <strong>Electrical settings</strong>

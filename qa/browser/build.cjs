@@ -36,4 +36,7 @@ module.exports = async function build(output, negativeControl) {
     });
   });
   fs.copyFileSync(path.join(__dirname, 'index.html'), path.join(output, 'index.html'));
+  const font = 'fonts/instrument-sans/InstrumentSans-Variable.ttf';
+  fs.mkdirSync(path.dirname(path.join(output, font)), { recursive: true });
+  fs.copyFileSync(path.join(ui, 'public', font), path.join(output, font));
 };

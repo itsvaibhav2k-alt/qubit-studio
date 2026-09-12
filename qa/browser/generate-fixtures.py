@@ -19,6 +19,8 @@ fixtures = {
     'evaluate16': evaluate(DeviceRequest(**{**p, 'ej_ghz': 16})),
     'evaluate17': evaluate(DeviceRequest(**{**p, 'ej_ghz': 17})),
     'search': search_result,
+    'searchWithBaseline': search(SearchRequest(points=201, ncut=40, baseline=DeviceRequest(**p))),
+    'defaultSearchWithBaseline': search(SearchRequest(points=201, ncut=30, baseline=DeviceRequest())),
     'candidate': evaluate(DeviceRequest(**candidate)),
     'stress': stress_test(StressRequest(**p, variation_percent=5)),
     'tunable': evaluate_tunable(TunableDeviceRequest(ejmax_ghz=15, ec_ghz=.3, ng=.3, ncut=40, flux=.25, asymmetry=.1)),

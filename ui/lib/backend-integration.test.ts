@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { DEFAULT_EXPERIMENT_CONTROLS, experimentSnapshot, parseExperimentResult } from './experiment-session.ts';
 import { buildChipSnapshot } from './insight-snapshot.ts';
 import { composeLocalMyla } from './explain-local.ts';
 import { TOPIC_IDS } from './explain-topics.ts';
@@ -65,4 +66,19 @@ test('real PDF includes the producing cutoff and model provenance', async () => 
     explanation: 'Evaluated grid recommendation; materials are independent evidence.', provenance: { ng: 0, ncut: 40, modelVersion: 'integration-provenance' } });
   const text = new TextDecoder().decode(bytes);
   assert.match(text, /^%PDF-/); assert.match(text, /ncut 40/); assert.match(text, /integration-provenance/);
+});
+
+
+test('actual extended search response preserves baseline assessment through the current session parser', () => {
+  const context = { params: fixtures.params, goals,
+    materials: { topMaterial: 'Al', baseMaterial: 'Si', topColor: '#aaaaaa', baseColor: '#333333' },
+    baseline: fixtures.evaluate };
+  const snapshot = experimentSnapshot('search', context, DEFAULT_EXPERIMENT_CONTROLS);
+  const result = parseExperimentResult('search', fixtures.searchWithBaseline, snapshot);
+  assert.deepEqual(result.baseline_evaluation?.params, fixtures.params);
+  assert.equal(result.baseline_evaluation?.assessment.ng, fixtures.params.ng);
+  assert.equal(result.baseline_evaluation?.assessment.ncut, fixtures.params.ncut);
+  assert.ok(result.selection_evidence);
+  assert.equal(result.selected?.ej_ghz, fixtures.search.selected.ej_ghz);
+  assert.equal(result.selected?.ec_ghz, fixtures.search.selected.ec_ghz);
 });

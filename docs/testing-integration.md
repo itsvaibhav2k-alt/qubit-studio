@@ -73,6 +73,15 @@ the test driver; they do not reimplement reducers, freshness decisions, Apply,
 or export logic. The Page journey clicks the real export button and captures
 the actual JSON Blob sent to its download anchor.
 
+The Page journey verifies High detail is the default, then selects Balanced
+through the real toolbar for software WebGL. It waits for actual mesh bounds
+before testing interactions. Both Blob reads allow 15 seconds; the overall
+browser deadline is 120 seconds to include initial shader compilation. These
+are correctness checks, not GPU performance benchmarks. High-detail appearance,
+orbiting, exploded separation, and narrow-pane framing are checked separately
+against the real app. Geometry-bound unit tests cover current world transforms,
+hidden groups, hit volumes, empty scenes, and viewport proportions.
+
 `run.cjs` owns a temporary Chromium profile and an ephemeral loopback static
 server. It does not start Next or FastAPI, touch another browser, or connect to
 the running UI previews. Only its generated local asset files may reach the
@@ -133,6 +142,8 @@ replace Page/Inspector with stubs to make integration pass.
 ## Separate maintenance and integration tiers
 
 Run `cd ui && npm run test:browser:negative` when changing the harness itself.
+Alternatively, manually dispatch the Verification workflow with
+`negative_controls` enabled to run the same maintenance tier on Ubuntu.
 Two builds remove Search or Compare accessibility attributes **in memory only**.
 Each must fail at its specific component assertion. Compilation failure, a
 missing browser, or a timeout is not a passing negative control. Their individual

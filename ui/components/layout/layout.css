@@ -21,3 +21,12 @@
 
 .layout-viewport{position:relative}.layout-pad-focus{position:absolute;top:42px;left:16px;z-index:2;border:1px solid #365c70;border-radius:5px;padding:6px 8px;background:#092a3bef}@media(max-width:700px){.layout-pad-focus{top:70px;left:10px}.layout-pad-focus>span{display:none}}
 .layout-canvas-toolbar{min-height:40px}
+
+/* Inspection labels remain legible in a narrow split, with placement handled in screen space. */
+.layout-annotations button{overflow:hidden;text-overflow:ellipsis;font-size:11px;line-height:17px;padding:4px 7px}
+.layout-pad-focus{position:static;align-self:flex-start;margin:4px 10px;flex-shrink:0}
+.layout-locator{width:130px!important;left:10px;bottom:10px}
+.layout-pick .part-outline{vector-effect:non-scaling-stroke}
+.layout-pick .junction-selection{vector-effect:non-scaling-stroke}
+.layout-pick:focus-visible{filter:none}
+.layout-pick:focus-visible .junction-selection{stroke:#b0dcff;stroke-width:1.5}

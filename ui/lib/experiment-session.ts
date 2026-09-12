@@ -6,7 +6,7 @@ import type { SubstratePreference } from './material-ranking.ts';
 export type ExperimentKind = 'search' | 'stress' | 'tunable' | 'material';
 export type ExperimentStatus = 'idle' | 'pending' | 'ready' | 'error';
 export interface ExperimentMaterials { topMaterial: string; baseMaterial: string; topColor: string; baseColor: string }
-export interface ExperimentContext { params: DeviceParams; goals: DesignGoals; materials: ExperimentMaterials }
+export interface ExperimentContext { params: DeviceParams; goals: DesignGoals; materials: ExperimentMaterials; baseline?: DeviceParams | null }
 export interface ExperimentControls {
   variation: number; flux: number; asymmetry: number; materialPriority: number;
   substratePreference: SubstratePreference; junctionFactor: number; capacitanceFactor: number;
@@ -61,6 +61,8 @@ const bounded = (x: unknown, lo: number, hi: number) => finite(x) && x >= lo && 
 const object = (x: unknown): x is Record<string, unknown> => x !== null && typeof x === 'object' && !Array.isArray(x);
 const key = (x: unknown) => JSON.stringify(x);
 const copy = <T,>(x: T): T => structuredClone(x);
+// A frozen baseline is separate evidence, not a search constraint or applied device.
+const decisionKey = (context: ExperimentContext) => key({ ...context, baseline: undefined });
 
 export function numericExperimentInput(raw: string): number {
   return raw.trim() === '' ? Number.NaN : Number(raw);
@@ -68,6 +70,9 @@ export function numericExperimentInput(raw: string): number {
 export function validExperimentGoals(goals: DesignGoals): boolean {
   return bounded(goals.target_ghz, 3, 8) && bounded(goals.tolerance_ghz, 0.01, 1)
     && bounded(goals.min_anharmonicity_mhz, 0, 2000) && bounded(goals.max_dispersion_khz, 0.01, 100000);
+}
+export function searchBaselineParams(baseline: DeviceParams | null | undefined): DeviceParams | null {
+  return baseline ? { ej_ghz: baseline.ej_ghz, ec_ghz: baseline.ec_ghz, ng: baseline.ng, ncut: baseline.ncut } : null;
 }
 export function experimentSnapshot(kind: ExperimentKind, context: ExperimentContext, c: ExperimentControls): ExperimentSnapshot {
   const { params, goals, materials } = context;
@@ -87,12 +92,13 @@ export function experimentSnapshot(kind: ExperimentKind, context: ExperimentCont
       junction_critical_current_factor: c.junctionFactor, total_capacitance_factor: c.capacitanceFactor };
     controls = { junctionFactor: c.junctionFactor, capacitanceFactor: c.capacitanceFactor };
   }
-  return copy({ params, goals, materials, controls, payload });
+  return copy({ params, goals, materials, controls, payload, ...(kind === 'search' && context.baseline ? { baseline: searchBaselineParams(context.baseline) } : {}) });
 }
 export function validateExperiment(kind: ExperimentKind, context: ExperimentContext, c: ExperimentControls): string | null {
   if (!validDeviceParams(context.params)) return 'Enter finite electrical settings within the supported bounds.';
   if (!validExperimentGoals(context.goals)) return 'Complete the goals with finite values within their supported bounds.';
   if (!Object.values(context.materials).every((v) => typeof v === 'string' && v.trim().length > 0 && v.length <= 100)) return 'Select valid material names and colors.';
+  if (kind === 'search' && context.baseline && !validDeviceParams(context.baseline)) return 'The pinned baseline has invalid electrical settings.';
   if (kind === 'search' && (!bounded(c.materialPriority, 0, 100)
     || !['any', 'Si', 'Al₂O₃ (sapphire)'].includes(c.substratePreference))) return 'Choose a valid material-ranking preference.';
   if (kind === 'tunable' && (!bounded(c.flux, 0, 1) || !bounded(c.asymmetry, 0, 1))) return 'Flux and junction asymmetry must be between 0 and 1.';
@@ -134,14 +140,30 @@ export function parseExperimentResult<K extends ExperimentKind>(kind: K, value: 
   if (kind !== 'tunable' && !matchesEcho(value.request, p)) return fail();
   if (kind === 'search') {
     if (value.model !== 'isolated-transmon' || typeof value.model_version !== 'string'
-      || !Array.isArray(value.candidates) || value.candidates.length !== p.points
-      || value.evaluated_count !== p.points || !Number.isInteger(value.feasible_count)
+      || !Array.isArray(value.candidates) || !bounded(value.candidates.length, 1, p.points as number)
+      || value.evaluated_count !== value.candidates.length || !Number.isInteger(value.feasible_count)
       || typeof value.selection_rule !== 'string' || value.optimality_scope !== 'evaluated grid only') return fail();
     for (const candidate of value.candidates) {
       if (!metrics(candidate) || candidate.ng !== 0 || !object(candidate.margins)
         || !['charge_budget_khz','anharmonicity_floor_mhz','ej_lower_ghz','ej_upper_ghz','ec_lower_ghz','ec_upper_ghz'].every((name) => finite((candidate.margins as Record<string, unknown>)[name]))
         || !Object.values(candidate.margins).every(finite) || !Array.isArray(candidate.violations)
         || !candidate.violations.every((r) => typeof r === 'string') || candidate.feasible !== (candidate.violations.length === 0)) return fail();
+    }
+    if (snapshot.baseline) {
+      const assessment = value.baseline_evaluation;
+      if (!object(assessment) || !matchesEcho(assessment.params, snapshot.baseline as unknown as Record<string, number>)
+        || !metrics(assessment.assessment) || !matchesEcho(assessment.assessment, snapshot.baseline as unknown as Record<string, number>)
+        || !object(assessment.assessment.margins) || !Object.values(assessment.assessment.margins).every(finite)
+        || !Array.isArray(assessment.assessment.violations) || !assessment.assessment.violations.every(reason => typeof reason === 'string')
+        || assessment.assessment.feasible !== (assessment.assessment.violations.length === 0)) return fail();
+    }
+    if (value.selection_evidence !== undefined) {
+      const evidence = value.selection_evidence;
+      if (!object(evidence) || !['higher_a_rejected', 'grid_boundary', 'evaluated_maximum', 'infeasible'].includes(evidence.kind as string)
+        || !Number.isInteger(evidence.higher_a_count) || !bounded(evidence.higher_a_count, 0, value.candidates.length)
+        || !Array.isArray(evidence.higher_a_rejections)
+        || !evidence.higher_a_rejections.every(item => object(item) && typeof item.reason === 'string' && Number.isInteger(item.count) && bounded(item.count, 1, value.evaluated_count as number))
+        || ![null, 'lower', 'upper'].includes(evidence.selected_at_ratio_boundary as null | string)) return fail();
     }
     const feasible = value.candidates.filter((candidate) => candidate.feasible);
     if (feasible.length !== value.feasible_count) return fail();
@@ -224,7 +246,7 @@ export class ExperimentSessionStore {
   }
   updateContext(context: ExperimentContext) {
     if (key(context) === key(this.context)) return;
-    for (const kind of KINDS) this.invalidate(kind);
+    if (decisionKey(context) !== decisionKey(this.context)) for (const kind of KINDS) this.invalidate(kind);
     this.context = copy(context); this.emit();
   }
   setControls = (patch: Partial<ExperimentControls>) => {
@@ -239,7 +261,7 @@ export class ExperimentSessionStore {
     const cell = this.cells[kind];
     return { status: cell.status, result: cell.result as ExperimentResults[K] | null, snapshot: cell.snapshot,
       current: this.active && cell.status === 'ready' && cell.completedGeneration === cell.generation && cell.snapshot !== null
-        && key(cell.snapshot) === key(experimentSnapshot(kind, context, this.controls)), error: cell.error };
+        && decisionKey(cell.snapshot) === decisionKey(experimentSnapshot(kind, context, this.controls)), error: cell.error };
   }
   async run(kind: ExperimentKind, context = this.context): Promise<void> {
     if (!this.active || key(context) !== key(this.context)) return;
@@ -253,7 +275,7 @@ export class ExperimentSessionStore {
     this.cells[kind] = { ...cell, status: 'pending' }; this.emit();
     try {
       const response = await this.fetcher(`/api/${ENDPOINTS[kind]}`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(snapshot.payload), signal: controller.signal, cache: 'no-store' });
+        body: JSON.stringify({ ...snapshot.payload, ...(snapshot.baseline ? { baseline: snapshot.baseline } : {}) }), signal: controller.signal, cache: 'no-store' });
       if (!response.ok) throw new Error(`The experiment could not be completed (HTTP ${response.status}). Check the inputs and retry.`);
       const result = parseExperimentResult(kind, await response.json(), snapshot);
       if (!this.active || controller.signal.aborted || this.cells[kind].generation !== generation) return;
@@ -310,6 +332,7 @@ export class ExperimentSessionStore {
         const s = record.snapshot;
         const inputs = Object.fromEntries([
           ...Object.entries(s.params).map(([k,v]) => [`params_${k}`, v]),
+          ...Object.entries(s.baseline ?? {}).map(([k,v]) => [`baseline_${k}`, v]),
           ...Object.entries(s.goals).map(([k,v]) => [`goals_${k}`, v]),
           ...Object.entries(s.materials).map(([k,v]) => [`materials_${k}`, v]),
           ...Object.entries(s.controls),
@@ -324,6 +347,9 @@ export class ExperimentSessionStore {
             chosen_ec_ghz: (this.chosenCandidate ?? r.selected)?.ec_ghz ?? null,
             chosen_material_id: this.chosenMaterialId,
             selected_ng: r.selected?.ng ?? null, evaluated_ncut: s.params.ncut,
+            selection_evidence_kind: r.selection_evidence?.kind ?? null,
+            higher_anharmonicity_rejected_count: r.selection_evidence?.higher_a_count ?? null,
+            baseline_assessment_freshness: !r.baseline_evaluation ? null : key(r.baseline_evaluation.params) === key(searchBaselineParams(context.baseline)) ? 'current' : 'outdated',
             f01_ghz: r.selected?.f01_ghz ?? null, anharmonicity_mhz: r.selected?.anharmonicity_mhz ?? null,
             dispersion_upper_khz: r.selected?.dispersion_upper_khz ?? null };
         } else if (kind === 'stress') {

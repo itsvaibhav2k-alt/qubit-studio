@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   ExperimentSessionStore, DEFAULT_EXPERIMENT_CONTROLS, experimentSnapshot,
-  numericExperimentInput, parseExperimentResult, validateExperiment, validExperimentGoals,
+  numericExperimentInput, parseExperimentResult, validateExperiment, validExperimentGoals, searchBaselineParams,
 } from './experiment-session.ts';
 import type { ExperimentContext } from './experiment-session.ts';
 
@@ -225,4 +225,39 @@ test('a new same-context search invalidates an asynchronous export of the previo
   assert.deepEqual(view.getApply('search'), h.store.getApply('search'));
   assert.equal(view.isCurrentSearch(producing), false);
   assert.equal(h.store.view().isCurrentSearch(h.store.view().search.result!), true);
+});
+
+
+test('a full frozen result contributes only exact baseline coordinates to search requests', async () => {
+  const h = harness();
+  const baseline = full();
+  const c = { ...context(), baseline };
+  h.store.updateContext(c);
+  const run = h.store.run('search');
+  assert.deepEqual(h.pending[0].payload.baseline, context().params);
+  assert.deepEqual(searchBaselineParams(baseline), context().params);
+  assert.equal('charge_response' in (h.pending[0].payload.baseline as object), false);
+  const response = search(h.pending[0].payload);
+  const assessment = { ...response.selected, ...context().params, ...metric(15, .3, .3), feasible: false, violations: ['design_reference_ng_mismatch'] };
+  h.succeed(0, { ...response, baseline_evaluation: { params: context().params, assessment } });
+  await run;
+  assert.equal(h.store.record('search').current, true);
+  assert.equal(h.store.view().evidence[0].summary.baseline_assessment_freshness, 'current');
+  const changed = { ...c, baseline: full({ ...context().params, ej_ghz: 16 }) };
+  assert.equal(h.store.view(changed).search.current, true, 'baseline-only edits do not invalidate the candidate grid');
+  h.store.updateContext(changed);
+  assert.equal(h.store.record('search').current, true);
+  assert.equal(h.store.view().evidence[0].summary.baseline_assessment_freshness, 'outdated');
+  assert.ok(h.store.getApply('search'), 'fresh candidates remain explicitly applicable after a baseline replacement');
+});
+
+test('a baseline assessment must match the frozen coordinates sent to the solver', () => {
+  const snapshot = experimentSnapshot('search', { ...context(), baseline: full() }, DEFAULT_EXPERIMENT_CONTROLS);
+  const response = search(snapshot.payload);
+  assert.throws(() => parseExperimentResult('search', response, snapshot));
+  const assessment = { ...response.selected, ...context().params, ...metric(15, .3, .3), feasible: false, violations: ['design_reference_ng_mismatch'] };
+  const withBaseline = { ...response, baseline_evaluation: { params: context().params, assessment } };
+  assert.doesNotThrow(() => parseExperimentResult('search', withBaseline, snapshot));
+  withBaseline.baseline_evaluation.params = { ...context().params, ncut: 30 };
+  assert.throws(() => parseExperimentResult('search', withBaseline, snapshot));
 });

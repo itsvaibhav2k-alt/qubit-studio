@@ -60,7 +60,7 @@ export default function ComponentMaterialPicker({ part, materials, onChange }: C
       <button className="material-browse" type="button" onClick={event => openLibrary(true, event.currentTarget)}
         aria-haspopup="dialog" aria-expanded={open} aria-controls={dialogId}><Atom size={12}/> Elements</button>
     </div>
-    <p className="component-material-scope">Changes this part’s appearance in both 3D views. Electrical values remain controlled by the model inputs.</p>
+    <p className="component-material-scope">Changes this part’s appearance in 3D and Layout. Electrical values remain controlled by the model inputs.</p>
 
     <Dialog open={open} onOpenChange={openLibrary}>
       <DialogContent id={dialogId} className="material-dialog" onCloseAutoFocus={event => {

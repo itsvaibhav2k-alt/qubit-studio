@@ -70,6 +70,7 @@ export default function Page() {
 
   const [selectedTopics, setSelectedTopics] = useState<Set<TopicId>>(new Set());
   const [llmOpen, setLlmOpen] = useState(false);
+  const [mylaModal, setMylaModal] = useState(true);
   const [mylaAnchor, setMylaAnchor] = useState({ x: 24, y: 72 });
   const lastClick = useRef({ x: 24, y: 72 });
   const tourActiveRef = useRef(false);
@@ -81,7 +82,7 @@ export default function Page() {
 
   const evaluation = useEvaluate(params);
   const { result, error, stale, status, retry } = evaluation;
-  const experiments = useExperimentSession(params, goals, materials);
+  const experiments = useExperimentSession(params, goals, materials, baseline);
 
   // Build a compact snapshot for the LLM
   const snapshot = useMemo(
@@ -154,6 +155,7 @@ export default function Page() {
   const askAbout = useCallback((id: TopicId) => {
     if (tourActiveRef.current || workshopActiveRef.current) return;
     setSelectedTopics(new Set([id]));
+    setMylaModal(false);
     setMylaAnchor(lastClick.current);
     setLlmOpen(true);
   }, []);
@@ -167,7 +169,8 @@ export default function Page() {
   const triggerAskLlm = useCallback(() => {
     if (tourActiveRef.current || workshopActiveRef.current) return;
     const id = topicsArray[0] ?? 'f01';
-    setSelectedTopics(new Set([id]));
+    if (!topicsArray.length) setSelectedTopics(new Set([id]));
+    setMylaModal(true);
     setMylaAnchor(lastClick.current);
     setLlmOpen(true);
   }, [topicsArray]);
@@ -308,6 +311,7 @@ export default function Page() {
         onBuildChip={startWorkshop}
         buildingChip={workshopIndex !== null}
         hiddenParts={hiddenParts} onToggleVisible={toggleVisible}
+        onRestoreInspectionView={(selection,hidden)=>{setSelected(selection);setHiddenParts(hidden);}}
         explode={explode} onExplode={setExplode} onReset3d={() => viewportRef.current?.resetView()}
         onExport={exportReport} canExport={canPin && validExperimentGoals(goals)}
         atDefaults={atDefaults}
@@ -347,6 +351,8 @@ export default function Page() {
         topics={topicsArray}
         snapshot={snapshot}
         anchor={mylaAnchor}
+        modal={mylaModal}
+        onTopicsChange={topics => setSelectedTopics(new Set(topics))}
       />
     </>
   );

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BUILDER_DESIGN_PRESETS, BUILDER_TEMPLATES, EMPTY_BUILDER_DESIGN, createBuilderPart, createPresetDesign, createStarterDesign, designToSvg, designWarnings, portPoint, replaceBuilderPart, replacementTemplatesForPart, snap, validBuilderDesign } from './chip-builder.ts';
+import { builderElectricalModel, BUILDER_DESIGN_PRESETS, BUILDER_TEMPLATES, EMPTY_BUILDER_DESIGN, createBuilderPart, createPresetDesign, createStarterDesign, designToSvg, designWarnings, portPoint, replaceBuilderPart, replacementTemplatesForPart, snap, validBuilderDesign } from './chip-builder.ts';
 
 test('chip builder snaps values and creates catalog parts', () => {
   assert.equal(snap(117, 10), 120);
@@ -63,4 +63,45 @@ test('pre-existing chip library designs contain valid reusable pieces', () => {
       assert.ok(connection.to.port < to.ports, `${preset.name} to port`);
     }
   }
+});
+
+test('malformed imported parts and connections are rejected without throwing', () => {
+  const starter = createStarterDesign();
+  for (const parts of [[null], [false], [{}]]) {
+    assert.equal(validBuilderDesign({ ...starter, parts }), false);
+  }
+  for (const connections of [[null], [{}], [{ id: 'bad', from: null, to: null }]]) {
+    assert.equal(validBuilderDesign({ ...starter, connections }), false);
+  }
+  for (const patch of [{ ports: 1000000 }, { ports: -1 }, { areaUm2: -1 }, { areaUm2: Infinity }, { sourceUrl: 'javascript:alert(1)' }, { material: null }]) {
+    assert.equal(validBuilderDesign({ ...starter, parts: [{ ...starter.parts[0], ...patch }, ...starter.parts.slice(1)] }), false);
+  }
+  assert.equal(validBuilderDesign({ ...starter, parts: [...starter.parts, starter.parts[0]] }), false);
+  assert.equal(validBuilderDesign({ ...starter, connections: [...starter.connections, starter.connections[0]] }), false);
+});
+
+test('imported connections must refer to a real port on each piece', () => {
+  const starter = createStarterDesign();
+  const connection = starter.connections[0];
+  for (const port of [-1, 2, 1.5]) {
+    assert.equal(validBuilderDesign({ ...starter, connections: [{ ...connection, from: { ...connection.from, port } }] }), false);
+  }
+  assert.equal(validBuilderDesign({ ...starter, connections: [{ ...connection, from: { partId: 'missing', port: 0 } }] }), false);
+});
+
+
+test('builder electrical application matches supported solver values without hiding invalid areas', () => {
+  const starter = createStarterDesign();
+  const model = builderElectricalModel(starter)!;
+  assert.ok(model.ejGhz > 0 && model.ecGhz > 0);
+  assert.equal(model.bounded, false);
+  const huge = { ...starter, parts: starter.parts.map(part => part.role === 'junction' ? { ...part, areaUm2: 1000 } : part) };
+  assert.equal(builderElectricalModel(huge)?.ejGhz, 50);
+  assert.equal(builderElectricalModel(huge)?.bounded, true);
+  for (const areaUm2 of [0, -1, NaN, Infinity]) {
+    const invalid = { ...starter, parts: starter.parts.map(part => part.role === 'capacitor' ? { ...part, areaUm2 } : part) };
+    assert.equal(builderElectricalModel(invalid), null);
+  }
+  assert.equal(builderElectricalModel(EMPTY_BUILDER_DESIGN), null);
+  assert.equal(builderElectricalModel(createPresetDesign('tunable-transmon'))?.junctionCount, 2);
 });

@@ -9,10 +9,10 @@ import { mathValue } from '@/lib/math-format';
 import type { DeviceResult } from '@/lib/types';
 import { MATERIAL_CATALOG } from '@/lib/material-records';
 import { materialColor } from '@/lib/material-colors';
-import { DEFAULT_GEOMETRY_ASSUMPTIONS, ecFromCapacitorArea, ejFromJunctionArea } from '@/lib/geometry-model';
 import {
   BUILDER_TEMPLATES,
   BUILDER_DESIGN_PRESETS,
+  builderElectricalModel,
   EMPTY_BUILDER_DESIGN,
   createBuilderPart,
   createPresetDesign,
@@ -91,16 +91,7 @@ export default function ChipBuilder({ onApplyElectrical, result }: Props) {
   const selected = design.parts.find(part => part.id === selectedId) ?? null;
   const replacements = useMemo(() => selected ? replacementTemplatesForPart(selected) : [], [selected]);
   const warnings = useMemo(() => designWarnings(design), [design]);
-  const builderElectrical = useMemo(() => {
-    const junction = design.parts.find(part => part.role === 'junction' && part.areaUm2);
-    const capacitors = design.parts.filter(part => part.role === 'capacitor' && part.areaUm2);
-    if (!junction?.areaUm2 || capacitors.length === 0) return null;
-    const capArea = capacitors.reduce((sum, part) => sum + (part.areaUm2 ?? 0), 0);
-    return {
-      ejGhz: ejFromJunctionArea(junction.areaUm2, DEFAULT_GEOMETRY_ASSUMPTIONS.criticalCurrentDensityAcm2),
-      ecGhz: ecFromCapacitorArea(capArea, DEFAULT_GEOMETRY_ASSUMPTIONS.capacitanceDensityFfUm2),
-    };
-  }, [design]);
+  const builderElectrical = useMemo(() => builderElectricalModel(design), [design]);
   const builderResult = result && builderElectrical
     && Math.abs(result.ej_ghz - builderElectrical.ejGhz) < 1e-9
     && Math.abs(result.ec_ghz - builderElectrical.ecGhz) < 1e-9 ? result : null;
@@ -116,9 +107,12 @@ export default function ChipBuilder({ onApplyElectrical, result }: Props) {
   }, []);
 
   const point = (clientX: number, clientY: number) => {
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
-    return { x: (clientX - rect.left) / rect.width * design.chipWidth, y: (clientY - rect.top) / rect.height * design.chipHeight };
+    const svg = svgRef.current;
+    const matrix = svg?.getScreenCTM();
+    if (!svg || !matrix) return { x: 0, y: 0 };
+    const cursor = svg.createSVGPoint();
+    cursor.x = clientX; cursor.y = clientY;
+    return cursor.matrixTransform(matrix.inverse());
   };
   const updatePart = (id: string, patch: Partial<BuilderPart>) => setDesign(current => ({ ...current, parts: current.parts.map(part => part.id === id ? { ...part, ...patch } : part) }));
   const addTemplate = (template: BuilderTemplate, at?: { x: number; y: number }) => {
@@ -134,7 +128,7 @@ export default function ChipBuilder({ onApplyElectrical, result }: Props) {
   };
   const duplicateSelected = () => {
     if (!selected) return;
-    const copy = { ...selected, id:`${selected.templateId}-${Date.now()}`, name:`${selected.name} copy`, x:snap(selected.x+design.grid*3,design.grid), y:snap(selected.y+design.grid*3,design.grid) };
+    const copy = { ...selected, id:crypto.randomUUID(), name:`${selected.name} copy`, x:snap(selected.x+design.grid*3,design.grid), y:snap(selected.y+design.grid*3,design.grid) };
     setDesign(current => ({ ...current, parts:[...current.parts,copy] })); setSelectedId(copy.id);
   };
   const swapSelected = (template: BuilderTemplate) => {
@@ -143,7 +137,7 @@ export default function ChipBuilder({ onApplyElectrical, result }: Props) {
     setStatus(`${selected.name} replaced with ${template.name}. Position and compatible connections were kept.`);
   };
   const connect = (partId: string, port: number) => {
-    if (!pendingPort) { setPendingPort({ partId, port }); setStatus('Choose a port on another piece.'); return; }
+    if (!pendingPort || !design.parts.some(part => part.id === pendingPort.partId && pendingPort.port >= 0 && pendingPort.port < part.ports)) { setPendingPort({ partId, port }); setStatus('Choose a port on another piece.'); return; }
     if (pendingPort.partId === partId && pendingPort.port === port) { setPendingPort(null); return; }
     const duplicate = design.connections.some(item => (item.from.partId===pendingPort.partId&&item.from.port===pendingPort.port&&item.to.partId===partId&&item.to.port===port)||(item.to.partId===pendingPort.partId&&item.to.port===pendingPort.port&&item.from.partId===partId&&item.from.port===port));
     if (!duplicate) setDesign(current => ({ ...current, connections:[...current.connections,{ id:crypto.randomUUID(), from:pendingPort, to:{partId,port} }] }));
@@ -155,18 +149,22 @@ export default function ChipBuilder({ onApplyElectrical, result }: Props) {
     setDesign(current => ({ ...current, parts:[...current.parts,part] })); setSelectedId(part.id); setStatus('Custom piece added.');
   };
   const save = () => {
+    if (!validBuilderDesign(design)) { setStatus('Check piece dimensions, areas, and connections before saving.'); return; }
     const snapshot = structuredClone(design);
     const next = [snapshot, ...saved.filter(item => JSON.stringify(item) !== JSON.stringify(snapshot))].slice(0, 8);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); setSaved(next); setStatus('Custom chip saved in this browser.');
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); setSaved(next); setStatus('Custom chip saved in this browser.'); }
+    catch { setStatus('Browser storage is unavailable or full. Export JSON to keep this chip.'); }
   };
   const apply = () => {
     if (!builderElectrical) return;
     onApplyElectrical(builderElectrical.ejGhz, builderElectrical.ecGhz);
-    setStatus('Supported junction and capacitor areas applied to the teaching model.');
+    setStatus(builderElectrical.bounded
+      ? 'Areas exceed the solver range; the nearest supported electrical values were applied.'
+      : 'Supported junction and capacitor areas applied to the teaching model.');
   };
   const importJson = async (file?: File) => {
     if (!file) return;
-    try { const parsed: unknown = JSON.parse(await file.text()); if (!validBuilderDesign(parsed)) throw new Error('Unsupported chip file'); setDesign(parsed); setSelectedId(null); setStatus('Chip file imported.'); }
+    try { const parsed: unknown = JSON.parse(await file.text()); if (!validBuilderDesign(parsed)) throw new Error('Unsupported chip file'); setDesign(parsed); setSelectedId(null); setPendingPort(null); setStatus('Chip file imported.'); }
     catch (reason) { setStatus(reason instanceof Error ? reason.message : 'Could not import that file.'); }
   };
   const renderConnections = (offset = 0) => design.connections.map(connection => {
@@ -207,9 +205,9 @@ export default function ChipBuilder({ onApplyElectrical, result }: Props) {
     <defs><pattern id="builder-grid" width={design.grid} height={design.grid} patternUnits="userSpaceOnUse"><path d={`M ${design.grid} 0 L 0 0 0 ${design.grid}`} fill="none" stroke="#6090a5" strokeOpacity=".22" strokeWidth="1"/></pattern></defs>
     <rect width="100%" height="100%" rx="20" fill="#092f40" stroke="#5790a8" strokeWidth="8" onClick={()=>setSelectedId(null)}/><rect width="100%" height="100%" rx="20" fill="url(#builder-grid)" onClick={()=>setSelectedId(null)}/>
     {renderConnections()}
-    {design.parts.map(part=><g key={part.id} className={`builder-piece${selectedId===part.id?' selected':''}`} transform={`translate(${part.x} ${part.y}) rotate(${part.rotation})`} onClick={event=>{event.stopPropagation();setSelectedId(part.id);}} onPointerDown={(event:ReactPointerEvent<SVGGElement>)=>{if((event.target as Element).classList.contains('builder-port'))return;event.stopPropagation();setSelectedId(part.id);const at=point(event.clientX,event.clientY);drag.current={id:part.id,dx:at.x-part.x,dy:at.y-part.y};event.currentTarget.ownerSVGElement?.setPointerCapture(event.pointerId);}}>
+    {design.parts.map(part=><g key={part.id} className={`builder-piece${selectedId===part.id?' selected':''}`} role="button" tabIndex={0} aria-label={`Select ${part.name}`} onKeyDown={event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();setSelectedId(part.id);}}} transform={`translate(${part.x} ${part.y}) rotate(${part.rotation})`} onClick={event=>{event.stopPropagation();setSelectedId(part.id);}} onPointerDown={(event:ReactPointerEvent<SVGGElement>)=>{if((event.target as Element).classList.contains('builder-port'))return;event.stopPropagation();setSelectedId(part.id);const at=point(event.clientX,event.clientY);drag.current={id:part.id,dx:at.x-part.x,dy:at.y-part.y};event.currentTarget.ownerSVGElement?.setPointerCapture(event.pointerId);}}>
       <Piece part={part} ghost={selectedId===part.id}/><text y={part.height/2+18} textAnchor="middle" transform={`rotate(${-part.rotation})`} className="builder-piece-label">{part.name}</text>
-      {Array.from({length:part.ports},(_,port)=>{const p=portPoint({...part,x:0,y:0},port);const active=pendingPort?.partId===part.id&&pendingPort.port===port;return <circle key={port} className={`builder-port${active?' active':''}`} cx={p.x} cy={p.y} r="8" onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();connect(part.id,port);}}><title>Connection port {port+1}</title></circle>;})}
+      {Array.from({length:part.ports},(_,port)=>{const p=portPoint({...part,x:0,y:0,rotation:0},port);const active=pendingPort?.partId===part.id&&pendingPort.port===port;return <circle key={port} className={`builder-port${active?' active':''}`} cx={p.x} cy={p.y} r="8" onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();connect(part.id,port);}}><title>Connection port {port+1}</title></circle>;})}
     </g>)}
   </svg>;
 
@@ -220,8 +218,8 @@ export default function ChipBuilder({ onApplyElectrical, result }: Props) {
       <div className="chip-builder-toolbar">
         <input aria-label="Chip design name" value={design.name} onChange={event=>setDesign(current=>({...current,name:event.target.value}))}/>
         <div role="group" aria-label="Builder view"><button aria-pressed={view==='layout'} onClick={()=>setView('layout')}><Grid3X3 size={15}/>Layout</button><button aria-pressed={view==='circuit'} onClick={()=>setView('circuit')}><CircuitBoard size={15}/>Circuit</button><button aria-pressed={view==='3d'} onClick={()=>setView('3d')}><Box size={15}/>3D preview</button></div>
-        <button onClick={()=>{setDesign(createStarterDesign());setSelectedId(null);setStatus('Starter transmon loaded.');}}>Starter layout</button>
-        <button onClick={save}><Save size={15}/>Save</button><button disabled={!saved.length} onClick={()=>{if(saved[0])setDesign(structuredClone(saved[0]));}}><MathText math={`${saved.length}`} /> saved</button>
+        <button onClick={()=>{setDesign(createStarterDesign());setSelectedId(null);setPendingPort(null);setStatus('Starter transmon loaded.');}}>Starter layout</button>
+        <button onClick={save}><Save size={15}/>Save</button><button disabled={!saved.length} onClick={()=>{if(saved[0]){setDesign(structuredClone(saved[0]));setSelectedId(null);setPendingPort(null);}}}><MathText math={`${saved.length}`} /> saved</button>
         <button onClick={()=>fileRef.current?.click()}><Upload size={15}/>Import JSON</button><input ref={fileRef} hidden type="file" accept="application/json,.json" onChange={event=>importJson(event.target.files?.[0])}/>
         <button onClick={()=>download(`${filename}.json`,JSON.stringify(design,null,2),'application/json')}><Download size={15}/>JSON</button>
         <button onClick={()=>download(`${filename}.svg`,designToSvg(design),'image/svg+xml')}><Download size={15}/>SVG</button>
@@ -229,7 +227,7 @@ export default function ChipBuilder({ onApplyElectrical, result }: Props) {
       <div className="chip-builder-grid">
         <aside className="builder-palette">
           <h3>Chip design library</h3><p>Load a complete example, then exchange its pieces like a LEGO set.</p>
-          <div className="builder-design-library">{BUILDER_DESIGN_PRESETS.map(preset=><button key={preset.id} type="button" onClick={()=>{setDesign(createPresetDesign(preset.id));setSelectedId(null);setStatus(`${preset.name} loaded.`);}}><strong>{preset.name}</strong><small>{preset.explanation}</small><span>{preset.pieces.join(' · ')}</span></button>)}</div>
+          <div className="builder-design-library">{BUILDER_DESIGN_PRESETS.map(preset=><button key={preset.id} type="button" onClick={()=>{setDesign(createPresetDesign(preset.id));setSelectedId(null);setPendingPort(null);setStatus(`${preset.name} loaded.`);}}><strong>{preset.name}</strong><small>{preset.explanation}</small><span>{preset.pieces.join(' · ')}</span></button>)}</div>
           <h3 className="builder-parts-title">Materials</h3><p>{selected ? `Choose a material for ${selected.name}. The color updates immediately.` : 'Select a piece on the chip, then choose its material here.'}</p><div className="builder-materials">{MATERIALS.filter(material=>material!=='None').map(material=><button key={material} type="button" disabled={!selected} aria-pressed={selected?.material===material} onClick={()=>selected&&updatePart(selected.id,{material})}><i style={{background:materialColor(material)}}/><span>{material}</span></button>)}</div><h3 className="builder-parts-title">Loose pieces</h3><p>Drag a part onto the chip or click to add it.</p>{categories.map(category=><section key={category}><h4>{category}</h4>{BUILDER_TEMPLATES.filter(item=>item.category===category).map(template=><button key={template.id} draggable onDragStart={event=>event.dataTransfer.setData('text/qubit-part',template.id)} onClick={()=>addTemplate(template)}><CirclePlus size={14}/><span><strong>{template.name}</strong><small>{template.explanation}</small></span></button>)}</section>)}</aside>
         <main className="builder-canvas"><div className="builder-canvas-head"><span>{view==='layout'?'TOP LAYOUT · drag pieces · click ports to connect':view==='circuit'?'CIRCUIT · updates automatically when pieces change':'AUTOMATIC 3D PREVIEW · visual only'}</span><span><MathText math={`${design.parts.length}`} /> pieces · <MathText math={`${design.connections.length}`} /> connections</span></div>{canvas}<div className="builder-canvas-foot"><span>Grid <strong><MathText math={`${design.grid}`} /></strong> · chip <strong><MathText math={`${design.chipWidth}\\times${design.chipHeight}`} /></strong> layout units</span><span><Link2 size={13}/>{view==='circuit'?'Symbols follow each piece’s purpose':'Blue lines are user connections'}</span></div></main>
         <aside className="builder-inspector">
@@ -248,7 +246,7 @@ export default function ChipBuilder({ onApplyElectrical, result }: Props) {
           <button className="builder-clear-selection" disabled={!selected} onClick={()=>setSelectedId(null)}>Create another custom piece</button>
         </aside>
       </div>
-      <footer className="builder-footer"><div className="builder-footer-summary"><div className={`builder-checks${warnings.length?' warning':''}`}><strong>{warnings.length ? <><MathText math={`${warnings.length}`} /> design checks</> : 'Basic checks passed'}</strong>{warnings.length?<ul>{warnings.map(warning=><li key={warning}>{warning}</li>)}</ul>:<span>Junction, capacitance, boundaries, and connections are present.</span>}</div><div className={`builder-simulation${builderResult?' current':''}`}><strong>{builderResult?'Current simulation for this chip':'Simulation scope'}</strong>{builderResult?<span><MathText math={`f_{01}=${mathValue(builderResult.f01_ghz, 3, 'GHz')}`} /> · <MathText math={`|\\alpha|=${mathValue(builderResult.anharmonicity_mhz, 1, 'MHz')}`} /> · <MathText math={`\\delta f_{01}\\le ${mathValue(builderResult.dispersion_upper_khz, 3, 'kHz')}`} /></span>:<span>Use this chip to calculate its supported electrical values.</span>}<small>Only stated junction and capacitor areas affect the solver. Placement, routing, readout pieces, and materials remain visual.</small></div></div><div className="builder-footer-actions"><span role="status">{status}</span><button onClick={()=>{setDesign(structuredClone(EMPTY_BUILDER_DESIGN));setSelectedId(null);}}>New blank chip</button><button className="builder-primary" disabled={!modeledReady} onClick={apply}>Use this chip in simulation</button></div></footer>
+      <footer className="builder-footer"><div className="builder-footer-summary"><div className={`builder-checks${warnings.length?' warning':''}`}><strong>{warnings.length ? <><MathText math={`${warnings.length}`} /> design checks</> : 'Basic checks passed'}</strong>{warnings.length?<ul>{warnings.map(warning=><li key={warning}>{warning}</li>)}</ul>:<span>Junction, capacitance, boundaries, and connections are present.</span>}</div><div className={`builder-simulation${builderResult?' current':''}`}><strong>{builderResult?'Current simulation for this chip':'Simulation scope'}</strong>{builderResult?<span><MathText math={`f_{01}=${mathValue(builderResult.f01_ghz, 3, 'GHz')}`} /> · <MathText math={`|\\alpha|=${mathValue(builderResult.anharmonicity_mhz, 1, 'MHz')}`} /> · <MathText math={`\\delta f_{01}\\le ${mathValue(builderResult.dispersion_upper_khz, 3, 'kHz')}`} /></span>:<span>Use this chip to calculate its supported electrical values.</span>}<small>Only stated junction and capacitor areas affect the solver. Placement, routing, readout pieces, and materials remain visual.</small>{!builderElectrical&&<small>Add a junction and capacitor with positive finite physical areas to simulate.</small>}{builderElectrical?.bounded&&<small>Areas exceed the solver range. The simulation uses the nearest supported electrical values.</small>}{builderElectrical&&builderElectrical.junctionCount>1&&<small>This fixed-transmon preview uses the first junction. Use the separate flux experiment to explore a two-junction model.</small>}</div></div><div className="builder-footer-actions"><span role="status">{status}</span><button onClick={()=>{setDesign(structuredClone(EMPTY_BUILDER_DESIGN));setSelectedId(null);setPendingPort(null);}}>New blank chip</button><button className="builder-primary" disabled={!modeledReady} onClick={apply}>Use this chip in simulation</button></div></footer>
     </DialogContent></Dialog>
   </>;
 }

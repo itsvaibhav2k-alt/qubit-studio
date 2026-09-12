@@ -43,15 +43,24 @@ Open [localhost:3100](http://localhost:3100). The UI server proxies calculation 
 
 On Windows, use `py -3.12 -m venv simulation/.venv` and replace `simulation/.venv/bin/python` with `simulation\.venv\Scripts\python.exe`. If nvm is unavailable, install the Node version in `.nvmrc` directly.
 
-## Branches and current work
+## Unified workspace
 
-- `main`: shared checkpoint and collaboration setup. Use feature branches and pull requests to change it.
-- `feat/design-search`: completed search API, decision state, frozen baseline assessment, comparison classification, and tests. Its pull request is the search lane handoff.
-- `feat/design-workspace`: Claude's separate UI lane; its owner publishes checkpoints when ready. Local uncommitted work is not included in a push.
+The integration branch combines Myla and the reusable chip builder with the detailed 3D/Layout
+workspace. Explore edits a single applied device; Design retains the shared search, stress,
+flux, and material-scenario session across tabs. Pin a baseline, inspect candidate trade-offs,
+apply explicitly, and save or export the resulting device with its producing inputs.
 
-The current `main` UI is the Explore workspace. The Design workflow becomes a complete product experience after the search and UI lanes are integrated and verified together.
+- **3D / Layout / Split:** linked selection, component isolation, material appearance, layers,
+  inspection zoom, saved inspection views, and assembled/exploded presentation.
+- **Chip builder:** reusable presets and pieces, replacements, editable geometry/materials,
+  connections, layout/circuit/3D previews, JSON import, JSON/SVG export, and numerical Apply.
+- **Learn:** short and full guided tours, a step-by-step build workshop, and technical notes.
+- **Ask Myla:** immediate local teaching plus an explicit optional Gemini explanation request.
+- **Design tools:** local saved devices, restore/history, and shareable links.
 
-For lane ownership and the shared contract, read [the team handoff](docs/plans/team-build-handoff.md). Its original approval/setup checklist is historical: Git and the shared remote are now configured, and implementation has begun. The search branch's `ui/lib/search-types.ts` is the canonical interface; do not create a competing hook or scoring implementation.
+See [the unification report](docs/myla-unification.md) for the exact source branches, preserved
+contracts, verification commands, and provider-testing limits. Feature branches remain separate
+from the original working checkout; this integration does not alter its local UI edits.
 
 ## Checks
 
@@ -65,7 +74,9 @@ npm --prefix ui run typecheck
 
 The build also checks TypeScript. Running the explicit typecheck after the build includes Next's generated route types. On macOS/Linux, `./scripts/check.sh` runs all of these checks in sequence.
 
-A GitHub Actions template is prepared at [docs/ci/github-actions.yml](docs/ci/github-actions.yml). It is not active: the publishing GitHub sign-in currently has repository access but lacks the additional `workflow` scope. Once an authorized sign-in has workflow-write permission, move that file to `.github/workflows/ci.yml` and push it to enable checks on `main` pushes and pull requests. The local checks work immediately.
+The active [Verification workflow](.github/workflows/verification.yml) runs the frontend,
+Python, and browser tiers for pull requests and main pushes. Local passing results are recorded
+separately from GitHub CI results. See [testing and integration](docs/testing-integration.md).
 
 `simulation/requirements.in` lists direct dependencies. `simulation/requirements.txt` records the exact tested Python environment, including NumPy and SciPy. Update dependency files together and rerun the numerical tests. `ui/package-lock.json` controls the frontend install; use `npm ci` on a new checkout.
 

@@ -6,6 +6,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      negative_controls:
+        description: 'Also verify the browser harness detects intentional accessibility regressions'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,6 +43,9 @@ jobs:
         run: ./node_modules/.bin/playwright install --with-deps chromium
       - name: Frontend tests, lint, one production build, typecheck, and browser journeys
         run: npm run check
+      - name: Browser harness negative controls
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.negative_controls }}
+        run: npm run test:browser:negative
       - name: Preserve verification evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

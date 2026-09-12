@@ -14,6 +14,7 @@ import { ANCHORS, FRAME, PARTS_GEOMETRY } from '@/lib/chip-geometry';
 import type { Projected } from '@/lib/connector';
 import type { PartId } from '@/lib/parts';
 import { DEFAULT_COMPONENT_MATERIALS, resolveMaterial, type ComponentMaterials } from '@/lib/component-materials';
+import { projectedBounds } from '@/lib/geometry-bounds';
 
 export interface ViewportHandle {
   resetView: () => void;
@@ -36,43 +37,15 @@ const EXPLODED_DIRECTION = new Vector3(
 /** Fill this fraction of the free region's limiting angle. */
 const FILL = 0.97;
 
-const box = new Box3();
-const corner = new Vector3();
-
-/**
- * Screen-space bounds (canvas px) of the visible rendered meshes under `root`. Hit volumes and
- * helper lines are excluded. Uses each mesh's current world matrix.
- */
-function projectedBounds(
-  root: Group,
-  camera: PerspectiveCamera,
-  width: number,
-  height: number,
-): { left: number; top: number; right: number; bottom: number } | null {
-  let left = Infinity;
-  let top = Infinity;
-  let right = -Infinity;
-  let bottom = -Infinity;
-  root.traverse((object) => {
-    if (!(object instanceof Mesh) || object.userData.hit || !object.visible) return;
-    box.setFromObject(object);
-    if (box.isEmpty()) return;
-    for (let i = 0; i < 8; i += 1) {
-      corner.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z);
-      corner.project(camera);
-      const px = ((corner.x + 1) / 2) * width;
-      const py = ((1 - corner.y) / 2) * height;
-      if (px < left) left = px;
-      if (px > right) right = px;
-      if (py < top) top = py;
-      if (py > bottom) bottom = py;
-    }
-  });
-  return Number.isFinite(left) ? { left, top, right, bottom } : null;
+/** Three.js owns these mutable camera/control objects; React only selects the inspection mode. */
+function setInspectionLimits(camera: PerspectiveCamera, controls: OrbitControlsImpl | null, isolatedRadius: number | null) {
+  camera.near = isolatedRadius === null ? 0.1 : Math.max(0.0001, Math.min(0.01, isolatedRadius * 0.02));
+  if (controls) controls.minDistance = isolatedRadius === null ? 1 : Math.max(0.005, isolatedRadius * 1.05);
 }
 
 interface FramingProps {
   region: Rect | null;
+  isolatedPart: PartId | null;
   explodeTarget: number;
   /** True once the explode animation has settled, so the refinement measures final positions. */
   settled: boolean;
@@ -85,7 +58,7 @@ interface FramingProps {
  * projection is sheared so the orbit target projects to the region centre. Re-fits on canvas size,
  * region or explode change; user zoom persists until the next of those.
  */
-function Framing({ region, explodeTarget, settled, assemblyRef, fitRef }: FramingProps) {
+function Framing({ region, isolatedPart, explodeTarget, settled, assemblyRef, fitRef }: FramingProps) {
   const camera = useThree((state) => state.camera) as PerspectiveCamera;
   const size = useThree((state) => state.size);
   const controls = useThree((state) => state.controls) as OrbitControlsImpl | null;
@@ -93,6 +66,8 @@ function Framing({ region, explodeTarget, settled, assemblyRef, fitRef }: Framin
   // Once the user has orbited or zoomed, automatic refits only dolly OUT (never undo a zoom-out);
   // Reset view clears the flag and restores the reference framing.
   const userMovedRef = useRef(false);
+  const previousIsolation = useRef<PartId | null>(null);
+  const beforeIsolation = useRef<{ position: Vector3; target: Vector3; view: PerspectiveCamera['view']; userMoved: boolean } | null>(null);
 
   useEffect(() => {
     if (!controls) return undefined;
@@ -104,12 +79,36 @@ function Framing({ region, explodeTarget, settled, assemblyRef, fitRef }: Framin
   }, [controls]);
 
   useEffect(() => {
+    const isolationChanged = previousIsolation.current !== isolatedPart;
+    if (isolationChanged && isolatedPart && !previousIsolation.current) {
+      beforeIsolation.current = {
+        position: camera.position.clone(), target: controls?.target.clone() ?? new Vector3(),
+        view: camera.view ? { ...camera.view } : null, userMoved: userMovedRef.current,
+      };
+    }
+    const restore = isolationChanged && !isolatedPart ? beforeIsolation.current : null;
+    previousIsolation.current = isolatedPart;
     const fit = (resetPose: boolean) => {
       if (resetPose) userMovedRef.current = false;
       if (!('isPerspectiveCamera' in camera)) return;
       const canvas = { x: 0, y: 0, width: size.width, height: size.height };
       const free = region ?? canvas;
-      const radius = sceneRadius(explodeTarget, PARTS_GEOMETRY) / FILL;
+      const assembly = assemblyRef.current;
+      const isolatedBounds = new Box3();
+      if (isolatedPart && assembly) {
+        assembly.updateWorldMatrix(true, true);
+        assembly.traverseVisible(object => {
+          if (!(object instanceof Mesh) || object.userData.hit || object.type.startsWith('Line')) return;
+          if (!object.geometry.boundingBox) object.geometry.computeBoundingBox();
+          if (object.geometry.boundingBox && !object.geometry.boundingBox.isEmpty()) {
+            isolatedBounds.union(object.geometry.boundingBox.clone().applyMatrix4(object.matrixWorld));
+          }
+        });
+      }
+      const isolatedRadius = isolatedBounds.isEmpty() ? null : isolatedBounds.getSize(new Vector3()).length() / 2;
+      const radius = (isolatedRadius ?? sceneRadius(explodeTarget, PARTS_GEOMETRY)) / FILL;
+      // Only an isolated component can use close-up limits: keep the orbit outside its geometry.
+      setInspectionLimits(camera, controls, isolatedRadius);
       const distance = fitDistanceInRegion(radius, camera.fov, size.height, free.width, free.height);
       if (!Number.isFinite(distance)) return;
       const { dx, dy } = viewOffset(canvas, free);
@@ -119,7 +118,8 @@ function Framing({ region, explodeTarget, settled, assemblyRef, fitRef }: Framin
       const offset = () => camera.setViewOffset(size.width, size.height, -(dx + cx), -(dy + cy), size.width, size.height);
       offset();
       const target = controls?.target ?? new Vector3();
-      if (resetPose) target.set(0, 0, 0);
+      if (isolatedRadius !== null && (resetPose || !userMovedRef.current)) isolatedBounds.getCenter(target);
+      else if (resetPose) target.set(0, 0, 0);
       const defaultDirection = explodeTarget > 0 ? EXPLODED_DIRECTION : DEFAULT_DIRECTION;
       const direction = resetPose || !userMovedRef.current ? defaultDirection.clone() : camera.position.clone().sub(target);
       if (direction.lengthSq() === 0) direction.copy(DEFAULT_DIRECTION);
@@ -134,8 +134,7 @@ function Framing({ region, explodeTarget, settled, assemblyRef, fitRef }: Framin
       place(floor(distance));
       // The sphere is conservative for a flat, square object: refine size and centring against the
       // real projected extent of the rendered meshes.
-      const assembly = assemblyRef.current;
-      if (assembly && settled) {
+      if (assembly && settled && !isolatedPart) {
         assembly.updateWorldMatrix(true, true);
         let d = distance;
         for (let i = 0; i < 4; i += 1) {
@@ -156,8 +155,22 @@ function Framing({ region, explodeTarget, settled, assemblyRef, fitRef }: Framin
       invalidate();
     };
     fitRef.current = fit;
-    fit(false);
-  }, [size.width, size.height, region, explodeTarget, settled, camera, controls, fitRef, assemblyRef, invalidate]);
+    if (restore) {
+      camera.position.copy(restore.position);
+      const view = restore.view;
+      if (view?.enabled) camera.setViewOffset(size.width, size.height,
+        view.offsetX * size.width / view.fullWidth, view.offsetY * size.height / view.fullHeight, size.width, size.height);
+      else camera.clearViewOffset();
+      setInspectionLimits(camera, controls, null);
+      if (controls) { controls.target.copy(restore.target); controls.update(); }
+      camera.lookAt(restore.target);
+      camera.updateMatrixWorld(true);
+      camera.updateProjectionMatrix();
+      userMovedRef.current = restore.userMoved;
+      beforeIsolation.current = null;
+      invalidate();
+    } else fit(isolationChanged);
+  }, [size.width, size.height, region, isolatedPart, explodeTarget, settled, camera, controls, fitRef, assemblyRef, invalidate]);
 
   return null;
 }
@@ -179,6 +192,7 @@ const scratch = new Vector3();
  */
 function Projector({ selected, explodeRef, anchorRef, wrapperRef, assemblyRef }: ProjectorProps) {
   const camera = useThree((state) => state.camera);
+  const controls = useThree((state) => state.controls) as OrbitControlsImpl | null;
   const size = useThree((state) => state.size);
 
   useFrame(() => {
@@ -195,9 +209,13 @@ function Projector({ selected, explodeRef, anchorRef, wrapperRef, assemblyRef }:
     const wrapper = wrapperRef.current;
     const assembly = assemblyRef.current;
     if (!wrapper || !assembly) return;
+    if (controls) wrapper.dataset.cameraDistance = camera.position.distanceTo(controls.target).toFixed(5);
+    wrapper.dataset.cameraNear = camera.near.toString();
     const bounds = projectedBounds(assembly, camera as PerspectiveCamera, size.width, size.height);
     if (bounds) {
       wrapper.dataset.bounds = `${bounds.left.toFixed(1)},${bounds.top.toFixed(1)},${bounds.right.toFixed(1)},${bounds.bottom.toFixed(1)}`;
+    } else {
+      delete wrapper.dataset.bounds;
     }
   });
 
@@ -248,6 +266,8 @@ function Scene({ selected, hiddenParts, explode, region, onSelect, controlsRef, 
   const assemblyRef = useRef<Group | null>(null);
   const smooth = useSmoothedExplode(explode, explodeRef);
   const floorY = FRAME.top - FRAME.depth + FRAME.explodeY * smooth - 0.012;
+  const visibleParts = PART_ORDER.filter(id => !hiddenParts.includes(id));
+  const isolatedPart = visibleParts.length === 1 ? visibleParts[0] : null;
 
   return (
     <>
@@ -264,7 +284,7 @@ function Scene({ selected, hiddenParts, explode, region, onSelect, controlsRef, 
             hidden={hiddenParts.includes(id)}
             explode={smooth}
             onSelect={onSelect}
-            guides
+            guides={!isolatedPart}
           />
         ))}
       </group>
@@ -272,7 +292,7 @@ function Scene({ selected, hiddenParts, explode, region, onSelect, controlsRef, 
       {/* This soft shadow stays at a fixed resolution so quality changes reuse its render targets. */}
       <ContactShadows position={[0, floorY, 0]} scale={4.5} blur={2.3} opacity={0.44} far={1.1} resolution={1024} frames={Infinity} />
 
-      <Framing region={region} explodeTarget={explode} settled={smooth === explode} assemblyRef={assemblyRef} fitRef={fitRef} />
+      <Framing region={region} isolatedPart={isolatedPart} explodeTarget={explode} settled={smooth === explode} assemblyRef={assemblyRef} fitRef={fitRef} />
       <Projector selected={selected} explodeRef={explodeRef} anchorRef={anchorRef} wrapperRef={wrapperRef} assemblyRef={assemblyRef} />
 
       <OrbitControls
@@ -312,6 +332,7 @@ export default function Viewport3D({
   const interaction=useContext(HardwareContext);
   const active=interaction?.active??activeProp;
   const select=interaction?.onSelect??onSelect;
+  const visibleHiddenParts=interaction?.hiddenPartsOverride??hiddenParts;
   const anchorRef = useRef<Projected | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
@@ -339,7 +360,7 @@ export default function Viewport3D({
   );
 
   return (
-    <div ref={wrapperRef} className="hardware-canvas" data-selected={selected??''} data-explode={explode} data-render-quality={renderQuality}>
+    <div ref={wrapperRef} className="hardware-canvas" data-selected={selected??''} data-hidden-parts={visibleHiddenParts.join(',')} data-explode={explode} data-render-quality={renderQuality}>
     {renderState !== 'ready' && <div className={`hardware-canvas-message ${renderState}`} role="status">
       <div className="hardware-fallback-chip" aria-hidden="true"><span/><span/><i/></div>
       <strong>{renderState === 'failed' ? '3D is unavailable in this browser' : 'Loading the 3D chip…'}</strong>
@@ -369,7 +390,7 @@ export default function Viewport3D({
     >
       <Scene
         selected={selected}
-        hiddenParts={hiddenParts}
+        hiddenParts={visibleHiddenParts}
         explode={explode}
         region={null}
         materialColors={materialColors}

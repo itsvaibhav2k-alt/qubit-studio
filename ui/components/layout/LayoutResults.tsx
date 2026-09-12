@@ -16,17 +16,19 @@ export default function LayoutResults(props: Props) {
     {id:'alpha',label:'Anharmonicity · |α|',value:result?`${num(result.anharmonicity_mhz,1)} MHz`:'—',pinned:baseline?`${num(baseline.anharmonicity_mhz,1)} MHz`:'—',difference:delta(result?.anharmonicity_mhz,baseline?.anharmonicity_mhz,1,'MHz')?.text??null},
     {id:'dispersion',label:'Charge dispersion',value:dispersion.text,pinned:pinnedDispersion.text,difference:dispersion.resolved&&pinnedDispersion.resolved?(delta(result?.dispersion_khz,baseline?.dispersion_khz,3,'kHz')?.text??null):null,note:dispersion.note},
   ];
-  return <div className="layout-results">
-    <div className="layout-results-toolbar"><strong>RESULTS</strong><span>{props.design?'Applied device':'Transmon model'} {canPin?'· current':'· '+(result?'previous result':'calculating')}</span><span className="spacer"/>
+  return <div className={`layout-results${expanded||props.tourExpanded?' is-expanded':''}`}>
+    <div className="layout-results-toolbar"><div className="results-identity"><strong>Results</strong><span className={canPin?'is-current':''}>{props.design?'Applied device · ':''}{error?'Calculation failed':canPin?'Current':result?'Updating…':'Calculating…'}</span></div><span className="spacer"/>
+      <details className="layout-popover results-actions"><summary>Actions <ChevronDown size={14}/></summary><div>
       <button onClick={onPin} disabled={!canPin}><Pin size={14}/>{baseline?'Replace baseline':'Pin baseline'}</button>
       {baseline&&<button onClick={onClearBaseline}><X size={14}/>Clear baseline</button>}
       <button onClick={props.onSolver}><Settings2 size={14}/>Solver settings</button>
       <button onClick={props.onExport} disabled={!props.canExport}><Download size={14}/>Export report</button>
-      <button onClick={()=>setExpanded(!expanded)} aria-expanded={expanded} aria-controls="layout-expanded-results"><ChevronDown size={14}/>{expanded?'Hide graphs & details':'Show graphs & details'}</button>
+      </div></details>
+      <button className="results-expand" onClick={()=>setExpanded(!expanded)} aria-expanded={expanded||!!props.tourExpanded} aria-controls="layout-expanded-results"><ChevronDown size={14}/>{expanded?'Hide graphs & details':'Details & compare'}</button>
     </div>
     {(!canPin||error) && <div className={`layout-result-state${error?' is-error':''}`} role="status">{error?`Calculation failed. ${error}`:result?'Updating… Previous values are outdated.':'Calculating the first result…'}{error&&<button onClick={onRetry}>Retry calculation</button>}</div>}
     <div className="layout-result-metrics" data-current={canPin}>
-      {metrics.map(metric=><button key={metric.id} className={`layout-result-metric${props.selectedTopics.has(metric.id)?' is-selected':''}`} aria-label={`${metric.label}: ${metric.value}. ${metric.difference??''}. Select for AI explanation`} aria-pressed={props.selectedTopics.has(metric.id)} onClick={()=>props.onSelectTopic(metric.id)}>
+      {metrics.map(metric=><button key={metric.id} data-tour={`metric-${metric.id}`} className={`layout-result-metric${props.selectedTopics.has(metric.id)?' is-selected':''}`} aria-label={`${metric.label}: ${metric.value}. ${metric.difference??''}. Select for AI explanation`} aria-pressed={props.selectedTopics.has(metric.id)} onClick={()=>props.onSelectTopic(metric.id)}>
         <span className="layout-result-label"><MathText text={metric.label} /></span><strong className="layout-result-value"><MathText text={metric.value} /></strong>
         {baseline&&<span className="layout-result-comparison"><span><MathText text={canPin?metric.difference??'Difference unresolved': 'Comparison awaits current result'} /></span><small>Pinned <MathText text={metric.pinned} /></small></span>}
         {metric.note&&<small className="layout-result-note">{metric.note}</small>}
