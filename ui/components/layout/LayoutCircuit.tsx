@@ -3,6 +3,8 @@ import type { KeyboardEvent } from 'react';
 import type { PartId } from '@/lib/parts';
 import type { DeviceParams } from '@/lib/types';
 import { num } from '@/lib/format';
+import MathText from '@/components/MathText';
+import { mathValue } from '@/lib/math-format';
 
 export default function LayoutCircuit({ params, selected, onSelect }: { params: DeviceParams; selected: PartId | null; onSelect: (part: PartId) => void }) {
   const pick=(id:PartId,label:string)=>({role:'button',tabIndex:0,'aria-label':label,'aria-pressed':selected===id,className:`circuit-pick${selected===id?' is-selected':''}`,onClick:()=>onSelect(id),onKeyDown:(event:KeyboardEvent<SVGGElement>)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();onSelect(id);}}});
@@ -15,6 +17,6 @@ export default function LayoutCircuit({ params, selected, onSelect }: { params: 
       <g {...pick('junction','Circuit Josephson junction — Josephson energy')}><rect x="298" y="0" width="54" height="100" fill="transparent" stroke="none"/><rect className="circuit-hit" x="302" y="52" width="46" height="44" rx="5"/><path d="M316 65H334V87H316ZM316 65L334 87M334 65L316 87"/><text x="325" y="19" textAnchor="middle">JJ1</text></g>
       <g fill="#294754"><circle cx="210" cy="38" r="2.5"/><circle cx="210" cy="105" r="2.5"/><circle cx="325" cy="105" r="2.5"/></g>
     </svg>
-    <p className="layout-circuit-values">EJ/h <strong>{num(params.ej_ghz,2)} GHz</strong><br/>EC/h <strong>{num(params.ec_ghz,3)} GHz</strong> · ng <strong>{num(params.ng,3)}</strong></p>
+    <p className="layout-circuit-values"><MathText math={`E_J/h=${mathValue(params.ej_ghz,2,'GHz')}`} /><br/><MathText math={`E_C/h=${mathValue(params.ec_ghz,3,'GHz')}; n_g=${num(params.ng,3)}`} /></p>
   </section>;
 }

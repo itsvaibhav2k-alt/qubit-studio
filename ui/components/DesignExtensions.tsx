@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import TradeoffChart from './TradeoffChart';
+import MathText from './MathText';
 import { buildDesignReportPdf, designReportFilename } from '@/lib/design-report';
 import { experimentSnapshot, parseExperimentResult, type ExperimentSession } from '@/lib/experiment-session';
-import { rankMaterialStacks, processBurden } from '@/lib/material-ranking';
+import { rankDistinctMaterialPairs, processBurden } from '@/lib/material-ranking';
 import { BCQT_SOURCE } from '@/lib/material-records';
 import type { DesignGoals, DeviceParams, SearchResult } from '@/lib/types';
 import type { MaterialAppearance } from '@/lib/material-colors';
@@ -30,7 +30,7 @@ export default function DesignExtensions({ session, params, goals, materials, on
   useEffect(() => { latest.current = key; controller.current?.abort(); return () => controller.current?.abort(); }, [key]);
   const candidate = session.chosenCandidate;
   const producing = session.search.snapshot;
-  const stacks = rankMaterialStacks(producing?.controls.materialPriority ?? session.controls.materialPriority,
+  const stacks = rankDistinctMaterialPairs(producing?.controls.materialPriority ?? session.controls.materialPriority,
     producing?.controls.substratePreference ?? session.controls.substratePreference);
   const stack = stacks.find(item => item.id === session.chosenMaterialId) ?? stacks[0];
   const rank = stacks.findIndex(item => item.id === stack.id) + 1;
@@ -83,9 +83,7 @@ export default function DesignExtensions({ session, params, goals, materials, on
       {preview?.key === key && <p role="status">{preview.result.feasible_count} of {preview.result.evaluated_count} quick samples passed. {preview.result.feasible_count ? 'Run the full search to inspect and apply a design.' : 'Inspect the constraints or relax your charge sensitivity or level separation goal.'}</p>}
       {session.search.result && candidate && <>
         {!session.search.current && <p role="status">Outdated alternatives — rerun search.</p>}
-        <TradeoffChart candidates={session.search.result.candidates} selected={candidate} onSelect={session.chooseCandidate} />
-        <label className="material-picker"><span>Inspected material stack</span><select aria-label="Inspected material stack" disabled={!session.search.current} value={stack.id} onChange={event => session.chooseMaterial(event.target.value)}>{stacks.map((item, index) => <option key={item.id} value={item.id}>#{index + 1} {item.material} on {item.substrate} · {item.treatment}</option>)}</select></label>
-        <p>Rank #{rank} of {stacks.length}; upper measured loss is {num(stack.lowPowerLossMax / Math.min(...stacks.map(item => item.lowPowerLossMax)), 1)}× the lowest upper bound in this list. Process burden: {num(processBurden(stack), 1)} heuristic points.</p>
+        <p>The visible complete-design selector contains all <MathText math={`${stacks.length}`} /> measured material pairs. The current pair is ranked <MathText math={`${rank}`} />.</p>
         <p>{explanation}</p>
         <p>Inspecting a point changes the candidate only. Choose “Use variables + materials” to apply its exact parameters.</p>
         <button type="button" className="btn" disabled={!session.getApply('search')} onClick={exportPdf}>Export design PDF</button>

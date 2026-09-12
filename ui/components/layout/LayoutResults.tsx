@@ -27,8 +27,8 @@ export default function LayoutResults(props: Props) {
     {(!canPin||error) && <div className={`layout-result-state${error?' is-error':''}`} role="status">{error?`Calculation failed. ${error}`:result?'Updating… Previous values are outdated.':'Calculating the first result…'}{error&&<button onClick={onRetry}>Retry calculation</button>}</div>}
     <div className="layout-result-metrics" data-current={canPin}>
       {metrics.map(metric=><button key={metric.id} className={`layout-result-metric${props.selectedTopics.has(metric.id)?' is-selected':''}`} aria-label={`${metric.label}: ${metric.value}. ${metric.difference??''}. Select for AI explanation`} aria-pressed={props.selectedTopics.has(metric.id)} onClick={()=>props.onSelectTopic(metric.id)}>
-        <span className="layout-result-label">{metric.label}</span><strong className="layout-result-value">{metric.value}</strong>
-        {baseline&&<span className="layout-result-comparison"><span>{canPin?metric.difference??'Difference unresolved': 'Comparison awaits current result'}</span><small>Pinned {metric.pinned}</small></span>}
+        <span className="layout-result-label"><MathText text={metric.label} /></span><strong className="layout-result-value"><MathText text={metric.value} /></strong>
+        {baseline&&<span className="layout-result-comparison"><span><MathText text={canPin?metric.difference??'Difference unresolved': 'Comparison awaits current result'} /></span><small>Pinned <MathText text={metric.pinned} /></small></span>}
         {metric.note&&<small className="layout-result-note">{metric.note}</small>}
       </button>)}
     </div>

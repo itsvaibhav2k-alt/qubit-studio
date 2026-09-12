@@ -15,5 +15,13 @@ EJ/EC stress test, flux and junction-asymmetry controls, demo presets, and JSON 
 export. Material combinations remain explicitly labeled as sensitivity scenarios unless
 the imported dataset has a matching record.
 
+The **Design tools → Build your own chip** workspace adds a reusable component palette,
+drag-and-drop placement with grid snapping, editable layers/materials/dimensions, custom
+parametric pieces, connection ports, a generated 3D preview, basic design checks, browser
+saves, and JSON/SVG import or export. Supported junction and capacitor areas can be applied
+to the teaching model; every other layout feature remains explicitly illustrative. Template
+references point to the original KQCircuits, Qiskit Metal, or gdsfactory project rather than
+presenting recreated teaching shapes as fabrication-ready source geometry.
+
 See [IMPLEMENTATION-REPORT.md](./IMPLEMENTATION-REPORT.md) for what is implemented,
 what is deliberately missing, and the command list.

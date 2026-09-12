@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   DEFAULT_MATERIAL_PRIORITY,
+  rankDistinctMaterialPairs,
   rankMaterialStacks,
   recommendMaterialStack,
   VALID_RESONATOR_STACKS,
@@ -49,5 +50,14 @@ describe('material stack selection', () => {
       new Set(ranked.map((record) => record.id)),
       new Set(VALID_RESONATOR_STACKS.map((record) => record.id)),
     );
+  });
+
+  it('offers each material and substrate pair only once', () => {
+    const pairs = rankDistinctMaterialPairs(100, 'any');
+    const names = pairs.map((record) => `${record.material} on ${record.substrate}`);
+
+    assert.equal(names.length, new Set(names).size);
+    assert.equal(names.filter((name) => name === 'Al on Si').length, 1);
+    assert.equal(pairs[0].id, recommendMaterialStack(100, 'any').id);
   });
 });

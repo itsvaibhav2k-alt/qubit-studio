@@ -1,7 +1,7 @@
 'use client';
 
 import MathText from '@/components/MathText';
-import { num } from '@/lib/format';
+import { mathValue } from '@/lib/math-format';
 import type { DeviceResult } from '@/lib/types';
 
 /** Tiny frequency-axis sketch: drive at f01 vs leakage at f12. */
@@ -26,19 +26,15 @@ export default function DriveCartoon({ result }: { result: DeviceResult }) {
         <path d={pulse(x01, leaky)} fill="#1a6fe0" opacity="0.22" />
         <path d={pulse(x01, leaky)} fill="none" stroke="#1a6fe0" strokeWidth="1.6" />
         <line x1={x01} x2={x01} y1="16" y2="48" stroke="#1a6fe0" strokeWidth="1.2" />
-        <text x={x01} y="12" textAnchor="middle" fontSize="10" fill="#1a6fe0">
-          f₀₁ {num(result.f01_ghz, 2)}
-        </text>
+        <foreignObject x={x01-55} y="0" width="110" height="18"><div className="svg-math-label blue center"><MathText math={`f_{01}=${mathValue(result.f01_ghz, 2, 'GHz')}`} /></div></foreignObject>
         <line x1={x12} x2={x12} y1="22" y2="48" stroke="#b3261e" strokeWidth="1.2" />
-        <text x={x12} y="14" textAnchor="middle" fontSize="10" fill="#b3261e">
-          f₁₂ {num(result.f12_ghz, 2)}
-        </text>
+        <foreignObject x={x12-55} y="3" width="110" height="18"><div className="svg-math-label red center"><MathText math={`f_{12}=${mathValue(result.f12_ghz, 2, 'GHz')}`} /></div></foreignObject>
         <text x={w - 16} y="64" textAnchor="end" fontSize="10" fill="#878f9b">
           frequency (qualitative)
         </text>
       </svg>
       <p className={`drive-note${leaky ? ' warn' : ''}`}>
-        <MathText text={`$|\\alpha| = ${num(alpha, 0)}$ MHz. The drawing is qualitative; pulse duration and leakage probability are not simulated.`} />
+        <MathText math={`|\\alpha|=${mathValue(alpha, 0, 'MHz')}`} />. The drawing is qualitative; pulse duration and leakage probability are not simulated.
       </p>
     </div>
   );

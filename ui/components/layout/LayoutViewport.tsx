@@ -6,6 +6,7 @@ import type { PartId } from '@/lib/parts';
 import { boundedCamera, layoutViewBox, type LayoutCamera } from '@/lib/layout-geometry';
 import LayoutArtwork from './LayoutArtwork';
 import { INITIAL_LAYOUT_VIEW, INSPECTIONS, returnFromInspection, type LayoutViewState, type InspectionLabel, type PadFocus } from '@/lib/layout-inspection';
+import MathText from '@/components/MathText';
 
 interface Props {
   selected: PartId | null;
@@ -79,7 +80,7 @@ export default function LayoutViewport({ selected, hiddenParts, onSelect, onInsp
         <button aria-label="Select parts" aria-pressed={!pan} onClick={()=>setPan(false)}><MousePointer2 size={17}/></button>
         <button aria-label="Pan layout" aria-pressed={pan} onClick={()=>setPan(true)}><Hand size={17}/></button>
         <button aria-label="Zoom out" disabled={camera.zoom<=1} onClick={()=>zoom(1/1.25)}><Minus size={17}/></button>
-        <output aria-label="Layout zoom">{Math.round(camera.zoom*100)}%</output>
+        <output aria-label="Layout zoom"><MathText math={`${Math.round(camera.zoom*100)}\\,\\%`} /></output>
         <button aria-label="Zoom in" disabled={camera.zoom>=6} onClick={()=>zoom(1.25)}><Plus size={17}/></button>
         <button aria-label="Fit whole chip" onClick={()=>onViewState(INITIAL_LAYOUT_VIEW)}><Maximize size={17}/></button>
       </div>
@@ -97,6 +98,6 @@ export default function LayoutViewport({ selected, hiddenParts, onSelect, onInsp
         <svg viewBox="0 0 1000 620" aria-hidden="true"><LayoutArtwork selected={selected} miniature/><rect x={box.x} y={box.y} width={box.width} height={box.height} fill="#2499ff22" stroke="#51baff" strokeWidth="8"/></svg><span>Full-chip locator</span>
       </button>}
     </div>
-    <div className="layout-canvas-status"><span>{inspection?inspection.explanation:'Illustrative geometry · Double-click a part to inspect · 100% fits the whole chip'}</span><span className="layout-layer-key"><i/>Metal <i/>Junction <i/>Substrate</span></div>
+    <div className="layout-canvas-status"><span>{inspection?inspection.explanation:<><span>Illustrative geometry · Double-click a part to inspect · </span><MathText math="100\\,\\%"/><span> fits the whole chip</span></>}</span><span className="layout-layer-key"><i/>Metal <i/>Junction <i/>Substrate</span></div>
   </section>;
 }

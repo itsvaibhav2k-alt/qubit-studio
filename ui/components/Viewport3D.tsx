@@ -316,6 +316,15 @@ export default function Viewport3D({
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const fitRef = useRef<((resetPose: boolean) => void) | null>(null);
+  const [renderState, setRenderState] = useState<'loading' | 'ready' | 'failed'>(() => {
+    if (typeof document === 'undefined') return 'loading';
+    try {
+      const probe = document.createElement('canvas');
+      return probe.getContext('webgl2') || probe.getContext('webgl') ? 'loading' : 'failed';
+    } catch {
+      return 'failed';
+    }
+  });
 
   useImperativeHandle(handleRef, () => ({
     resetView: () => fitRef.current?.(true),
@@ -331,7 +340,13 @@ export default function Viewport3D({
 
   return (
     <div ref={wrapperRef} className="hardware-canvas" data-selected={selected??''} data-explode={explode} data-render-quality={renderQuality}>
-    <Canvas
+    {renderState !== 'ready' && <div className={`hardware-canvas-message ${renderState}`} role="status">
+      <div className="hardware-fallback-chip" aria-hidden="true"><span/><span/><i/></div>
+      <strong>{renderState === 'failed' ? '3D is unavailable in this browser' : 'Loading the 3D chip…'}</strong>
+      <span>{renderState === 'failed' ? 'Enable hardware acceleration or try another browser. The layout and simulation still work.' : 'Preparing the interactive model.'}</span>
+    </div>}
+    {renderState !== 'failed' && <Canvas
+      fallback={<div className="hardware-canvas-message failed"><strong>3D is unavailable in this browser</strong><span>The layout and simulation still work.</span></div>}
       camera={{ position: DEFAULT_DIRECTION.clone().multiplyScalar(5).toArray(), fov: 30, near: 0.1, far: 60 }}
       dpr={renderQuality === 'high' ? [2, 2.5] : [1, 1.5]}
       // Keep the full-quality image while idle. Controls, edits and explode
@@ -341,15 +356,14 @@ export default function Viewport3D({
       onPointerMissed={onClearSelection}
       gl={{
         antialias: true,
-        // The embedded browser presents captured frames between animation ticks.
         preserveDrawingBuffer: true,
         toneMapping: ACESFilmicToneMapping,
         toneMappingExposure: 1.0,
       }}
       onCreated={({ gl }) => {
-        // Refraction needs one multisampled buffer per camera. Keep that buffer
-        // compact while the visible geometry retains the full high-detail DPR.
+        setRenderState('ready');
         gl.transmissionResolutionScale = 0.5;
+        gl.domElement.addEventListener('webglcontextlost', () => setRenderState('failed'), { once: true });
       }}
       style={{ position: 'absolute', inset: 0 }}
     >
@@ -367,7 +381,7 @@ export default function Viewport3D({
         anchorRef={anchorRef}
         wrapperRef={wrapperRef}
       />
-    </Canvas>
+    </Canvas>}
     </div>
   );
 }

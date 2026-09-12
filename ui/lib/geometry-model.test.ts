@@ -20,4 +20,13 @@ describe('illustrative geometry conversions', () => {
     const area = capacitorAreaFromEc(0.3, density);
     assert.ok(Math.abs(ecFromCapacitorArea(area, density) - 0.3) < 1e-10);
   });
+
+  it('keeps capacitor areas aligned with the full valid EC range', () => {
+    const density = DEFAULT_GEOMETRY_ASSUMPTIONS.capacitanceDensityFfUm2;
+    for (const ecGhz of [0.01, 0.3, 2]) {
+      const area = capacitorAreaFromEc(ecGhz, density);
+      assert.ok(Number.isFinite(area) && area > 0);
+      assert.ok(Math.abs(ecFromCapacitorArea(area, density) - ecGhz) < 1e-10);
+    }
+  });
 });

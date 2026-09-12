@@ -4,6 +4,7 @@ import { useEvaluate } from '@/lib/useEvaluate';
 import { completedDevice } from '@/lib/device-snapshot';
 import MathText from '@/components/MathText';
 import { DASH, dispersionDisplay, num } from '@/lib/format';
+import { mathValue } from '@/lib/math-format';
 import type { DeviceParams, DeviceResult } from '@/lib/types';
 
 interface ChargeQubitPeerProps {
@@ -37,14 +38,14 @@ export default function ChargeQubitPeer({ params, result, enabled }: ChargeQubit
         <strong>This chip</strong>
         <strong>Charge qubit</strong>
         <span><MathText math="E_J/E_C" /></span>
-        <span>{num(result.ratio, 1)}</span>
-        <span>{peer ? num(peer.ratio, 1) : DASH}</span>
+        <span><MathText math={num(result.ratio, 1)} /></span>
+        <span>{peer ? <MathText math={num(peer.ratio, 1)} /> : DASH}</span>
         <span><MathText math="f_{01}" /></span>
-        <span>{num(result.f01_ghz, 3)} GHz</span>
-        <span>{peer ? `${num(peer.f01_ghz, 3)} GHz` : DASH}</span>
+        <span><MathText math={mathValue(result.f01_ghz, 3, 'GHz')} /></span>
+        <span>{peer ? <MathText math={mathValue(peer.f01_ghz, 3, 'GHz')} /> : DASH}</span>
         <span>Charge wiggle</span>
-        <span>{thisDisp.text}</span>
-        <span>{peer ? peerDisp.text : DASH}</span>
+        <span><MathText text={thisDisp.text} /></span>
+        <span>{peer ? <MathText text={peerDisp.text} /> : DASH}</span>
       </div>
     </div>
   );
