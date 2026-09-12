@@ -3,12 +3,14 @@
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AskLlm from '@/components/AskLlm';
+import GuidedTour from '@/components/GuidedTour';
 import Inspector from '@/components/Inspector';
 import PartsTree from '@/components/PartsTree';
 import ResultsDock from '@/components/ResultsDock';
 import Schematic from '@/components/Schematic';
 import type { ViewportHandle } from '@/components/Viewport3D';
 import { topicFromPart, type TopicId } from '@/lib/explain-topics';
+import { TOUR_STEPS, type InspectorTab } from '@/lib/guided-tour';
 import { buildChipSnapshot } from '@/lib/insight-snapshot';
 import { DEFAULT_PARAMS, clampParam, sameParams } from '@/lib/params';
 import type { ParamKey } from '@/lib/params';
@@ -57,9 +59,13 @@ export default function Page() {
     baseColor: materialColor('Si'),
   });
 
-  // AI feature state
-  const [selectedTopics, setSelectedTopics] = useState<Set<TopicId>>(new Set());
-  const [llmOpen, setLlmOpen] = useState(false);
+  const [focusTopic, setFocusTopic] = useState<TopicId | null>(null);
+  const [mylaOpen, setMylaOpen] = useState(false);
+  const [mylaAnchor, setMylaAnchor] = useState({ x: 24, y: 72 });
+  const lastClick = useRef({ x: 24, y: 72 });
+  const [guidedOpen, setGuidedOpen] = useState(false);
+  const [guidedIndex, setGuidedIndex] = useState(0);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>('edit');
 
   const viewportRef = useRef<ViewportHandle | null>(null);
 
@@ -76,12 +82,19 @@ export default function Page() {
         selected,
         stale,
         error,
+        context: {
+          top_material: materials.topMaterial,
+          base_material: materials.baseMaterial,
+          explode,
+          target_ghz: goals.target_ghz,
+          min_anharmonicity_mhz: goals.min_anharmonicity_mhz,
+          max_dispersion_khz: goals.max_dispersion_khz,
+        },
       }),
-    [params, result, baseline, selected, stale, error],
+    [params, result, baseline, selected, stale, error, materials, explode, goals],
   );
 
-  const topicsArray = useMemo(() => Array.from(selectedTopics), [selectedTopics]);
-  const explain = useExplain(snapshot, topicsArray);
+  const explain = useExplain(snapshot, focusTopic);
 
   const changeParam = useCallback((key: ParamKey, value: number) => {
     setParams((current) => ({ ...current, [key]: clampParam(key, value) }));
@@ -106,36 +119,49 @@ export default function Page() {
 
   const currentMaterialColors = materialPartColors(materials);
 
-  const onSelectTopic = useCallback((id: TopicId) => {
-    setSelectedTopics((current) => {
-      const next = new Set(current);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
+  useEffect(() => {
+    const track = (event: PointerEvent) => {
+      lastClick.current = { x: event.clientX, y: event.clientY };
+    };
+    window.addEventListener('pointerdown', track, true);
+    return () => window.removeEventListener('pointerdown', track, true);
   }, []);
 
-  const clearTopics = useCallback(() => {
-    setSelectedTopics(new Set());
-  }, []);
-
-  const triggerAskLlm = useCallback(() => {
-    if (selectedTopics.size === 0) return;
-    setLlmOpen(true);
-  }, [selectedTopics.size]);
+  const askAbout = useCallback((id: TopicId) => {
+    if (guidedOpen) return;
+    setFocusTopic(id);
+    setMylaAnchor(lastClick.current);
+    setMylaOpen(true);
+    setHintOpen(false);
+  }, [guidedOpen]);
 
   const selectPart = useCallback((id: PartId) => {
     setSelected(id);
-    // Auto-add the part's associated topic to the selection
     const next = topicFromPart(id);
-    if (next) {
-      setSelectedTopics((current) => new Set(current).add(next));
-    }
+    if (next && !guidedOpen) askAbout(next);
+    else setHintOpen(false);
+  }, [askAbout, guidedOpen]);
+
+  const startTour = useCallback(() => {
+    setMylaOpen(false);
     setHintOpen(false);
+    setGuidedIndex(0);
+    setGuidedOpen(true);
   }, []);
+
+  const stopTour = useCallback(() => {
+    setGuidedOpen(false);
+    setGuidedIndex(0);
+  }, []);
+
+  useEffect(() => {
+    if (!guidedOpen) return;
+    const step = TOUR_STEPS[guidedIndex];
+    if (!step) return;
+    if (step.tab) setInspectorTab(step.tab);
+    if (step.view) setView(step.view);
+    if (step.part !== undefined) setSelected(step.part);
+  }, [guidedOpen, guidedIndex]);
 
   const clearSelection = useCallback(() => setSelected(null), []);
 
@@ -147,11 +173,17 @@ export default function Page() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSelected(null);
+      if (event.key === 'Escape') {
+        if (guidedOpen) {
+          setGuidedOpen(false);
+          return;
+        }
+        setSelected(null);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [guidedOpen]);
 
   const show3d = view === '3d' || view === 'split';
   const showSchematic = view === 'schematic' || view === 'split';
@@ -188,12 +220,19 @@ export default function Page() {
   return (
     <div className="shell">
       <header className="topbar">
-        <div className="brand">
-          Qubit Studio <span>transmon · simplified model</span>
-        </div>
+        <button type="button" className="brand myla-hit" data-tour="brand" onClick={() => askAbout('model')}>
+          Qubit Studio <span>transmon · click anything for Myla</span>
+        </button>
         <span className="spacer" />
-        <span className={statusBadge.className}>{statusBadge.text}</span>
-        <label className="preset-control">
+        <span className={statusBadge.className} data-tour="status">{statusBadge.text}</span>
+        <button
+          type="button"
+          className={`btn${guidedOpen ? ' primary' : ''}`}
+          onClick={guidedOpen ? stopTour : startTour}
+        >
+          {guidedOpen ? 'Exit tour' : 'Guided learning'}
+        </button>
+        <label className="preset-control" data-tour="presets">
           Demo
           <select defaultValue="" onChange={(event) => {
             if (event.target.value) setParams(PRESETS[event.target.value]);
@@ -206,10 +245,11 @@ export default function Page() {
             <option value="anharmonic">High anharmonicity</option>
           </select>
         </label>
-        <button type="button" className="btn" onClick={exportReport} disabled={!result}>Export report</button>
+        <button type="button" className="btn" data-tour="export" onClick={exportReport} disabled={!result}>Export report</button>
         <button
           type="button"
           className="btn"
+          data-tour="reset-params"
           onClick={() => setParams(DEFAULT_PARAMS)}
           disabled={atDefaults}
           title="Return EJ, EC, ng and ncut to the model defaults"
@@ -223,8 +263,7 @@ export default function Page() {
         {hintOpen && (
           <div className="hint">
             <span>
-              Select the <strong>Josephson junction</strong>, then drag its tunnelling strength. Every number
-              below is recalculated by the solver.
+              Click anything on the chip or results — <strong>Myla</strong> will explain it.
               <br />
               <button type="button" onClick={() => selectPart('junction')}>
                 Select it for me
@@ -257,6 +296,7 @@ export default function Page() {
                 key={mode}
                 type="button"
                 aria-pressed={view === mode}
+                data-tour={`view-${mode}`}
                 onClick={() => setView(mode)}
               >
                 {label}
@@ -266,14 +306,15 @@ export default function Page() {
           <button
             type="button"
             className="btn"
+            data-tour="reset-view"
             onClick={() => viewportRef.current?.resetView()}
             disabled={!show3d}
             title="Return the camera to its starting position"
           >
             Reset view
           </button>
-          <label className="scrub" title="Separates the parts for inspection. Does not change any calculated value.">
-            Assembly
+          <label className="scrub" data-tour="assembly" title="View only — does not change the calculation. Click the word Assembly for Myla.">
+            <span className="myla-hit" onClick={() => askAbout('assembly')}>Assembly</span>
             <input
               type="range"
               min={0}
@@ -306,10 +347,10 @@ export default function Page() {
               handleRef={viewportRef}
               materialColors={currentMaterialColors}
             />
-            <div className="material-legend" aria-label="Current visual materials">
+            <button type="button" className="material-legend myla-hit" data-tour="legend" aria-label="Current visual materials" onClick={() => askAbout('materials')}>
               <span><i style={{ background: materials.topColor }} /> Metal · {materials.topMaterial}</span>
               <span><i style={{ background: materials.baseColor }} /> Base · {materials.baseMaterial}</span>
-            </div>
+            </button>
             <span className="viewport-note">Drag to orbit · right-drag to pan · scroll to zoom</span>
           </div>
           {view === 'split' && <div className="split-divider" />}
@@ -338,10 +379,9 @@ export default function Page() {
           onGoalsChange={setGoals}
           onMaterialsChange={changeMaterials}
           materials={materials}
-          selectedTopics={selectedTopics}
-          onSelectTopic={onSelectTopic}
-          onClearTopics={clearTopics}
-          onAskLlm={triggerAskLlm}
+          onAsk={askAbout}
+          tab={inspectorTab}
+          onTabChange={setInspectorTab}
         />
       </aside>
 
@@ -356,19 +396,28 @@ export default function Page() {
           onClearBaseline={() => setBaseline(null)}
           onRetry={retry}
           goals={goals}
-          selectedTopics={selectedTopics}
-          onSelectTopic={onSelectTopic}
+          selectedTopics={focusTopic ? new Set([focusTopic]) : new Set()}
+          onSelectTopic={askAbout}
         />
       </section>
 
       {/* AI explanation dialog */}
       <AskLlm
-        open={llmOpen}
-        onOpenChange={setLlmOpen}
-        topics={topicsArray}
+        open={mylaOpen}
+        onOpenChange={setMylaOpen}
+        topics={focusTopic ? [focusTopic] : []}
         snapshot={snapshot}
         explain={explain}
+        anchor={mylaAnchor}
       />
+      {guidedOpen && (
+        <GuidedTour
+          index={guidedIndex}
+          sceneKey={`${inspectorTab}-${view}-${selected ?? 'none'}`}
+          onIndex={setGuidedIndex}
+          onClose={stopTour}
+        />
+      )}
     </div>
   );
 }

@@ -6,7 +6,8 @@
 /** LLM path turns on as soon as GEMINI_API_KEY is present. Set INSIGHTS_USE_LLM=0 to force local. */
 export function llmInsightsConfigured(): boolean {
   if (process.env.INSIGHTS_USE_LLM === '0') return false;
-  return Boolean(process.env.GEMINI_API_KEY);
+  const key = (process.env.GEMINI_API_KEY ?? '').replace(/^["']|["']$/g, '');
+  return Boolean(key);
 }
 
 /** Extract concatenated text from a Gemini generateContent response body. */

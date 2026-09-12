@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import ParamField from './ParamField';
 import MaterialSensitivity from './MaterialSensitivity';
 import DesignLab from './DesignLab';
@@ -11,7 +10,7 @@ import type { ParamKey } from '@/lib/params';
 import { num } from '@/lib/format';
 import type { DesignGoals, DeviceParams, DeviceResult } from '@/lib/types';
 import type { MaterialAppearance } from '@/lib/material-colors';
-import { TOPICS, type TopicId } from '@/lib/explain-topics';
+import type { TopicId } from '@/lib/explain-topics';
 
 interface InspectorProps {
   selected: PartId | null;
@@ -24,10 +23,9 @@ interface InspectorProps {
   onGoalsChange: (goals: DesignGoals) => void;
   onMaterialsChange: (topMaterial: string, baseMaterial: string) => void;
   materials: MaterialAppearance;
-  selectedTopics: Set<TopicId>;
-  onSelectTopic: (id: TopicId) => void;
-  onClearTopics: () => void;
-  onAskLlm: () => void;
+  onAsk: (id: TopicId) => void;
+  tab: 'edit' | 'experiment' | 'materials';
+  onTabChange: (tab: 'edit' | 'experiment' | 'materials') => void;
 }
 
 export default function Inspector({
@@ -41,13 +39,11 @@ export default function Inspector({
   onGoalsChange,
   onMaterialsChange,
   materials,
-  selectedTopics,
-  onSelectTopic,
-  onClearTopics,
-  onAskLlm,
+  onAsk,
+  tab,
+  onTabChange,
 }: InspectorProps) {
   const part = selected ? PART_BY_ID[selected] : null;
-  const [tab, setTab] = useState<'edit' | 'experiment' | 'materials' | 'ask'>('edit');
 
   return (
     <>
@@ -57,9 +53,15 @@ export default function Inspector({
           ['edit', 'Edit chip'],
           ['experiment', 'Try a goal'],
           ['materials', 'Materials'],
-          ['ask', `Ask AI${selectedTopics.size > 0 ? ` (${selectedTopics.size})` : ''}`],
         ] as const).map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            data-tour={id === 'edit' ? 'tab-edit' : id === 'experiment' ? 'tab-goal' : 'tab-materials'}
+            onClick={() => onTabChange(id)}
+          >
             {label}
           </button>
         ))}
@@ -91,8 +93,18 @@ export default function Inspector({
 
           {part.param && (
             <>
-              <ParamField paramKey={part.param} value={params[part.param]} onChange={onChange} />
-              <details className="tech">
+              <ParamField
+                paramKey={part.param}
+                value={params[part.param]}
+                onChange={onChange}
+                onAsk={(key) => {
+                  if (key === 'ej_ghz') onAsk('junction');
+                  else if (key === 'ec_ghz') onAsk('capacitor');
+                  else if (key === 'ng') onAsk('gate');
+                }}
+                tourId={part.param === 'ej_ghz' ? 'field-ej' : part.param === 'ec_ghz' ? 'field-ec' : 'field-ng'}
+              />
+              <details className="tech" data-tour="tech-detail">
                 <summary>Technical detail</summary>
                 <div className="body">
                   <p style={{ margin: 0 }}>{PARAMS[part.param].meaning}</p>
@@ -145,6 +157,7 @@ export default function Inspector({
           onApply={onApplyMaterialScenario}
           onMaterialsChange={onMaterialsChange}
           currentMaterials={materials}
+          onAsk={onAsk}
         />}
 
       {tab === 'materials' && <MaterialSensitivity
@@ -154,57 +167,14 @@ export default function Inspector({
           onMaterialsChange={onMaterialsChange}
           topMaterial={materials.topMaterial}
           baseMaterial={materials.baseMaterial}
+          onAsk={onAsk}
         />}
 
-      {tab === 'ask' && (
-        <div className="insp-section ask-ai-panel">
-          <div className="insp-title">Ask AI</div>
-          <p className="insp-role">
-            Click result metrics (or a 3D part), then ask Gemini to explain the live numbers.
-          </p>
-
-          {selectedTopics.size === 0 ? (
-            <p className="ask-ai-empty">Nothing selected yet.</p>
-          ) : (
-            <>
-              <div className="ask-ai-topics">
-                {Array.from(selectedTopics).map((t) => {
-                  const spec = TOPICS[t];
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      className="topic-badge"
-                      title="Click to deselect"
-                      onClick={() => onSelectTopic(t)}
-                    >
-                      <span className="topic-label">{spec?.label ?? t}</span>
-                      <span className="topic-sym">{spec?.symbol ?? ''}</span>
-                      <span className="topic-remove" aria-hidden>×</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="ask-ai-actions">
-                <button type="button" className="btn primary" onClick={onAskLlm}>
-                  Ask Gemini
-                </button>
-                <button type="button" className="btn" onClick={onClearTopics}>
-                  Clear all
-                </button>
-              </div>
-            </>
-          )}
-
-
-        </div>
-      )}
-
       {tab === 'edit' && <div className="insp-section quiet-section">
-          <details className="tech">
+          <details className="tech" data-tour="ncut">
             <summary>Advanced solver setting</summary>
             <div className="body">
-              <ParamField paramKey="ncut" value={params.ncut} onChange={onChange} />
+              <ParamField paramKey="ncut" value={params.ncut} onChange={onChange} onAsk={() => onAsk('ncut')} tourId="ncut" />
               <p style={{ margin: '8px 0 0' }}>{PARAMS.ncut.meaning}</p>
             </div>
           </details>

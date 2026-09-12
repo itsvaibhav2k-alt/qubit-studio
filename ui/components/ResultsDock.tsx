@@ -1,6 +1,10 @@
 'use client';
 
+import { useState } from 'react';
+import ChargeQubitPeer from '@/components/ChargeQubitPeer';
+import DriveCartoon from '@/components/DriveCartoon';
 import { DASH, delta, dispersionDisplay, num, paramSummary, signed } from '@/lib/format';
+import { approxDeltaMhz, transmonApproxF01Ghz } from '@/lib/transmon-approx';
 import type { TopicId } from '@/lib/explain-topics';
 import type { ChargePoint, DesignGoals, DeviceResult } from '@/lib/types';
 
@@ -35,6 +39,7 @@ function Metric({ topicId, selected, label, symbol, value, muted, note, deltaTex
     <button
       type="button"
       className={`metric${selected ? ' on' : ''}`}
+      data-tour={`metric-${topicId}`}
       aria-pressed={selected}
       title={selected ? 'Selected for AI analysis — click to deselect' : 'Click to select for AI analysis'}
       onClick={() => onSelectTopic(topicId)}
@@ -164,7 +169,14 @@ export default function ResultsDock({
   selectedTopics,
   onSelectTopic,
 }: ResultsDockProps) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const dispersion = dispersionDisplay(result);
+  const approx = result ? transmonApproxF01Ghz(result.ej_ghz, result.ec_ghz) : null;
+  const approxDelta = result && approx !== null ? approxDeltaMhz(result.f01_ghz, result.ej_ghz, result.ec_ghz) : null;
+  const approxNote =
+    result && approx !== null && Number.isFinite(approx)
+      ? `approx √(8 EJ EC) − EC = ${num(approx, 3)} GHz · solver − formula ${signed(approxDelta, 0)} MHz`
+      : 'How fast the qubit changes between its two lowest states.';
   const baselineDispersion = baseline ? dispersionDisplay(baseline) : null;
   const checks = result ? [
     {
@@ -206,7 +218,7 @@ export default function ResultsDock({
       )}
 
       {result && (
-        <div className={`verdict ${passing === checks.length ? 'pass' : 'adjust'}`}>
+        <div className={`verdict ${passing === checks.length ? 'pass' : 'adjust'}`} data-tour="verdict" role="button" tabIndex={0} onClick={() => onSelectTopic('goals')} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelectTopic('goals'); }}>
           <div className="verdict-copy">
             <strong>{passing === checks.length ? 'This design passes your goals' : `This design passes ${passing} of ${checks.length} goals`}</strong>
             <span>{passing === checks.length
@@ -221,7 +233,7 @@ export default function ResultsDock({
 
       <div className="result-intro">
         <span className="eyebrow">At a glance</span>
-        <span>Click a metric to queue it for Ask AI.</span>
+        <span>Click a number — Myla explains it.</span>
       </div>
       <div className="dock-grid summary-grid">
         <Metric
@@ -231,8 +243,18 @@ export default function ResultsDock({
           label="Operating frequency"
           value={result ? `${num(result.f01_ghz, 3)} GHz` : DASH}
           muted={!result}
-          note="How fast the qubit changes between its two lowest states."
+          note={approxNote}
           deltaText={delta(result?.f01_ghz, baseline?.f01_ghz, 4, 'GHz')}
+        />
+        <Metric
+          topicId="f12"
+          selected={selectedTopics.has('f12')}
+          onSelectTopic={onSelectTopic}
+          label="Next rung f12"
+          value={result ? `${num(result.f12_ghz, 3)} GHz` : DASH}
+          muted={!result}
+          note="|1⟩ → |2⟩. A drive at f01 should miss this line."
+          deltaText={delta(result?.f12_ghz, baseline?.f12_ghz, 4, 'GHz')}
         />
         <Metric
           topicId="alpha"
@@ -241,7 +263,7 @@ export default function ResultsDock({
           label="Level separation"
           value={result ? `${num(result.anharmonicity_mhz, 1)} MHz` : DASH}
           muted={!result}
-          note="Bigger separation makes it easier to control one transition without hitting another."
+          note="α = f12 − f01. Bigger |α| means less leakage into |2⟩."
           deltaText={delta(result?.anharmonicity_mhz, baseline?.anharmonicity_mhz, 1, 'MHz')}
         />
         <Metric
@@ -251,7 +273,7 @@ export default function ResultsDock({
           label="Charge sensitivity"
           value={dispersion.text}
           muted={!result || !dispersion.resolved}
-          note={dispersion.note ?? 'Smaller is better: stray charge changes the frequency less.'}
+          note={dispersion.note || 'How much stray ng would move f01.'}
           deltaText={
             dispersion.resolved && baselineDispersion?.resolved
               ? delta(result?.dispersion_khz, baseline?.dispersion_khz, 3, 'kHz')
@@ -260,10 +282,14 @@ export default function ResultsDock({
         />
       </div>
 
-      <details className="results-technical">
+      <details
+        className="results-technical"
+        data-tour="tech-results"
+        onToggle={(event) => setDetailsOpen((event.currentTarget as HTMLDetailsElement).open)}
+      >
         <summary>Technical details and charts</summary>
-        <div className="result-actions">
-          <span>Compare changes by saving the current result as a baseline.</span>
+        <div className="result-actions" data-tour="baseline">
+          <span className="myla-hit" onClick={() => onSelectTopic('baseline')}>Compare changes by saving the current result as a baseline.</span>
           {baseline && <span className="pill" title={paramSummary(baseline)}>Baseline saved</span>}
           <button type="button" className="btn" onClick={onPin} disabled={!canPin}>Save baseline</button>
           <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>Clear</button>
@@ -274,10 +300,13 @@ export default function ResultsDock({
           <Metric topicId="junction" selected={selectedTopics.has('junction')} onSelectTopic={onSelectTopic} label="Critical current" symbol="derived from EJ" value={result?.critical_current_na !== undefined ? `${num(result.critical_current_na, 2)} nA` : DASH} muted={result?.critical_current_na === undefined} />
           <Metric topicId="capacitor" selected={selectedTopics.has('capacitor')} onSelectTopic={onSelectTopic} label="Total capacitance" symbol="derived from EC" value={result?.total_capacitance_ff !== undefined ? `${num(result.total_capacitance_ff, 2)} fF` : DASH} muted={result?.total_capacitance_ff === undefined} />
         </div>
+        {result && <DriveCartoon result={result} />}
+        {result && <ChargeQubitPeer params={result} result={result} enabled={detailsOpen} />}
         <div className="dock-lower">
           <button
             type="button"
             className={`chart${selectedTopics.has('levels') ? ' on' : ''}`}
+            data-tour="chart-levels"
             aria-pressed={selectedTopics.has('levels')}
             onClick={() => onSelectTopic('levels')}
           >
@@ -288,6 +317,7 @@ export default function ResultsDock({
           <button
             type="button"
             className={`chart${selectedTopics.has('charge') ? ' on' : ''}`}
+            data-tour="chart-charge"
             aria-pressed={selectedTopics.has('charge')}
             onClick={() => onSelectTopic('charge')}
           >

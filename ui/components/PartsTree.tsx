@@ -15,7 +15,7 @@ export default function PartsTree({ selected, hiddenParts, onSelect, onToggleVis
   const row = (part: Part) => {
     const hidden = hiddenParts.includes(part.id);
     return (
-      <div key={part.id} style={{ display: 'flex' }}>
+      <div key={part.id} style={{ display: 'flex' }} data-tour={`part-${part.id}`}>
         <button
           type="button"
           className={`tree-row${part.modeled ? '' : ' dim'}`}
@@ -32,6 +32,7 @@ export default function PartsTree({ selected, hiddenParts, onSelect, onToggleVis
             className="eye"
             role="button"
             tabIndex={0}
+            data-tour={`hide-${part.id}`}
             aria-label={`${hidden ? 'Show' : 'Hide'} ${part.name}`}
             title={`${hidden ? 'Show' : 'Hide'} in views`}
             onClick={(event) => {
@@ -54,7 +55,7 @@ export default function PartsTree({ selected, hiddenParts, onSelect, onToggleVis
   };
 
   return (
-    <div className="tree" role="listbox" aria-label="Parts tree">
+    <div className="tree" role="listbox" aria-label="Parts tree" data-tour="parts-panel">
       <div className="tree-group">Transmon qubit</div>
       {MODELED_PARTS.map(row)}
       <div className="tree-group">Context, not modelled</div>

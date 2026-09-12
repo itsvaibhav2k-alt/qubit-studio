@@ -1,16 +1,17 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import MathText from '@/components/MathText';
+import MylaIcon from '@/components/MylaIcon';
+import { composeLocalMyla } from '@/lib/explain-local';
 import { formatTopicHeadline, TOPICS, type TopicId } from '@/lib/explain-topics';
 import type { ExplainHandle } from '@/lib/useExplain';
 import type { ChipSnapshot } from '@/lib/insight-types';
+
+export interface ClickAnchor {
+  x: number;
+  y: number;
+}
 
 interface AskLlmProps {
   open: boolean;
@@ -18,82 +19,108 @@ interface AskLlmProps {
   topics: TopicId[];
   snapshot: ChipSnapshot;
   explain: ExplainHandle;
+  anchor: ClickAnchor;
 }
 
-export default function AskLlm({ open, onOpenChange, topics, snapshot, explain }: AskLlmProps) {
+const POP_W = 360;
+const GAP = 12;
+const MARGIN = 8;
+
+function place(anchor: ClickAnchor, width: number, height: number) {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  let left = anchor.x + GAP;
+  let top = anchor.y + GAP;
+  if (left + width > vw - MARGIN) left = anchor.x - width - GAP;
+  if (left < MARGIN) left = MARGIN;
+  if (top + height > vh - MARGIN) top = anchor.y - height - GAP;
+  if (top < MARGIN) top = MARGIN;
+  return { left, top };
+}
+
+export default function AskLlm({ open, onOpenChange, topics, snapshot, explain, anchor }: AskLlmProps) {
   const { answer, loading, error, ask } = explain;
   const askedKey = useRef<string | null>(null);
-
-  const topicsKey = [...topics].sort().join(',');
-  const headline =
-    topics.length === 1
-      ? formatTopicHeadline(topics[0], snapshot)
-      : `Ask LLM: ${topics.length} Windows Selected`;
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = useState({ left: anchor.x, top: anchor.y });
+  const topic = topics[0] ?? null;
+  const spec = topic ? TOPICS[topic] : null;
+  const headline = topic ? formatTopicHeadline(topic, snapshot) : 'Myla';
+  const local = topic ? composeLocalMyla(topic, snapshot) : null;
+  const shown = answer ?? local;
 
   useEffect(() => {
-    if (!open || topics.length === 0) {
-      if (!open) askedKey.current = null;
+    if (!open || !topic) {
+      askedKey.current = null;
       return;
     }
-    const key = `${topicsKey}:${snapshot.params.ej_ghz}:${snapshot.params.ec_ghz}:${snapshot.params.ng}:${snapshot.outputs?.f01_ghz ?? 'none'}`;
-    if (askedKey.current === key) return;
-    askedKey.current = key;
+    if (askedKey.current === topic) return;
+    askedKey.current = topic;
     ask();
-  }, [ask, open, snapshot.outputs?.f01_ghz, snapshot.params.ec_ghz, snapshot.params.ej_ghz, snapshot.params.ng, topics.length, topicsKey]);
+  }, [ask, open, topic]);
+
+  useLayoutEffect(() => {
+    if (!open || !panelRef.current) return;
+    const rect = panelRef.current.getBoundingClientRect();
+    setPos(place(anchor, rect.width || POP_W, rect.height || 220));
+  }, [anchor, open, shown?.body, loading]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onOpenChange(false);
+    };
+    const onDown = (event: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+        onOpenChange(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('mousedown', onDown);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('mousedown', onDown);
+    };
+  }, [open, onOpenChange]);
+
+  if (!open) return null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="ask-dialog sm:max-w-lg" showCloseButton>
-        <DialogHeader>
-          <DialogTitle>{headline}</DialogTitle>
-          <div className="text-sm text-muted-foreground mt-1">
-            {topics.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5 mt-1.5">
-                {topics.map((t) => {
-                  const spec = TOPICS[t];
-                  return (
-                    <span
-                      key={t}
-                      className="px-2 py-0.5 text-xs rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium"
-                    >
-                      {spec?.label ?? t} ({spec?.symbol ?? ''})
-                    </span>
-                  );
-                })}
-              </div>
-            ) : (
-              <span>Select one or more windows to analyze.</span>
-            )}
-          </div>
-        </DialogHeader>
-
-        {loading && <p className="ask-status">Asking Gemini to explain selected windows…</p>}
-        {error && <p className="insight-error">{error}</p>}
-        {answer && (
-          <article className="ask-answer">
-            <h4 className="text-base font-semibold mb-2">{answer.title}</h4>
-            {answer.body
-              .split('\n')
-              .filter(Boolean)
-              .map((para, index) => (
-                <p key={index} className="mb-2 text-sm leading-relaxed">
-                  {para}
-                </p>
-              ))}
-          </article>
-        )}
-        {!loading && !error && !answer && (
-          <p className="ask-status">Preparing an explanation across selected windows.</p>
-        )}
-
-        {answer && !loading && (
-          <div className="ask-dialog-actions mt-4 flex justify-end">
-            <Button type="button" variant="outline" size="sm" onClick={ask}>
-              Ask again
-            </Button>
-          </div>
-        )}
-      </DialogContent>
-    </Dialog>
+    <div
+      ref={panelRef}
+      className="myla-pop"
+      role="dialog"
+      aria-label="Myla"
+      style={{ left: pos.left, top: pos.top, width: POP_W }}
+    >
+      <button type="button" className="myla-x" onClick={() => onOpenChange(false)} aria-label="Close Myla">
+        ×
+      </button>
+      <div className="myla-head">
+        <MylaIcon size={38} />
+        <div className="myla-title">
+          <span className="myla-mark">Myla</span>
+          <span className="myla-sub">
+            <MathText text={headline} />
+          </span>
+        </div>
+      </div>
+      {spec && (
+        <p className="myla-sym">
+          <MathText text={`$${spec.tex}$`} />
+        </p>
+      )}
+      {shown && (
+        <article className="ask-answer">
+          {shown.body.split('\n').filter(Boolean).map((para, index) => (
+            <p key={index}>
+              <MathText text={para} />
+            </p>
+          ))}
+        </article>
+      )}
+      {loading && <p className="ask-status">Myla is adding a live readout…</p>}
+      {error && !answer && <p className="insight-error">{error}</p>}
+    </div>
   );
 }

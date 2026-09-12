@@ -54,6 +54,7 @@ export function buildChipSnapshot(input: {
   selected: PartId | null;
   stale: boolean;
   error: string | null;
+  context?: ChipSnapshot['context'];
 }): ChipSnapshot {
   return {
     selected_part: input.selected,
@@ -68,6 +69,7 @@ export function buildChipSnapshot(input: {
     baseline: input.baseline ? baselineFromResult(input.baseline) : null,
     stale: input.stale,
     error: input.error,
+    context: input.context,
   };
 }
 
@@ -165,6 +167,10 @@ export function parseChipSnapshot(
       baseline,
       stale: Boolean(source.stale),
       error: typeof source.error === 'string' ? source.error : null,
+      context:
+        source.context !== null && typeof source.context === 'object'
+          ? (source.context as ChipSnapshot['context'])
+          : undefined,
     },
   };
 }

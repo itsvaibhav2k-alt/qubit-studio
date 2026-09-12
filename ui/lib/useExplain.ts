@@ -24,11 +24,10 @@ export function useExplain(snapshot: ChipSnapshot, topicOrTopics: TopicId[] | To
 
   useEffect(() => {
     controllerRef.current?.abort();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAnswer(null);
     setError(null);
     setLoading(false);
-  }, [topicsKey, snapshot.params.ej_ghz, snapshot.params.ec_ghz, snapshot.params.ng, snapshot.params.ncut, snapshot.outputs?.f01_ghz]);
+  }, [topicsKey]);
 
   const ask = useCallback(() => {
     const topics: TopicId[] = Array.isArray(topicOrTopics)

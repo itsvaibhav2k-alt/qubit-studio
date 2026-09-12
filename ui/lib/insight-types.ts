@@ -57,6 +57,14 @@ export interface ChipSnapshot {
   baseline: SnapshotBaseline | null;
   stale: boolean;
   error: string | null;
+  context?: {
+    top_material?: string;
+    base_material?: string;
+    explode?: number;
+    target_ghz?: number;
+    min_anharmonicity_mhz?: number;
+    max_dispersion_khz?: number;
+  };
 }
 
 export interface InsightApiResponse extends InsightBundle {

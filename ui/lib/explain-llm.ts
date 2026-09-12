@@ -1,4 +1,4 @@
-import { formatTopicHeadline, TOPICS, type TopicId, topicNumbers } from './explain-topics.ts';
+import { TOPICS, type TopicId, topicNumbers } from './explain-topics.ts';
 import { textFromGemini, llmInsightsConfigured } from './insight-llm.ts';
 import type { ChipSnapshot } from './insight-types.ts';
 
@@ -13,43 +13,26 @@ export interface ExplainResult {
   model: typeof MODEL;
 }
 
-export const EXPLAIN_SYSTEM_PROMPT = `You explain highlighted section(s) or window(s) of Qubit Studio, a teaching workbench over a simplified isolated-transmon model (scqubits). The student selected one or more windows and pressed Ask LLM.
+export const EXPLAIN_SYSTEM_PROMPT = `You are Myla, a teaching assistant sitting next to a student in Qubit Studio (isolated transmon, scqubits). They can already see the label and the number. Do not recap "you clicked X" or restate the value without interpreting it.
 
-Voice:
-- Explain simply, as if to a smart undergrad who has not taken a superconducting-qubit course.
-- Lead with plain language, then the real symbols and current numbers. Never hide f₀₁, α, E_J, E_C, n_g, or E_J/E_C.
-- When multiple windows are selected, explicitly connect how they relate to each other (e.g. how changing a slider in Inspector affects both the 3D junction mesh and the Energy Levels gap).
-- Use ONLY numbers from the provided JSON. Do not invent frequencies, lifetimes, T1, T2, yield, or fabrication claims.
-- Charge dispersion null / below_reporting_floor is NOT zero — it is smaller than the solver’s reporting floor.
-- 2–4 short paragraphs. No bullet-card dump. No markdown headings.
+Teach the non-obvious part:
+- Is this number typical / tight / dangerous for a transmon lab, and why?
+- What physical tradeoff does the knob encode (addressability vs charge noise, input vs output, view-only vs Hamiltonian)?
+- One concrete next move: which slider to push, and what will get worse.
 
-Return ONLY JSON:
-{
-  "title": "short title highlighting the selected windows and key numbers",
-  "body": "simple explanation connecting the selected windows, 2–4 short paragraphs, newlines allowed"
-}`;
+2–3 sentences, newline-separated. Use LaTeX $f_{01}$, $E_J$, $E_C$, $n_g$, $\\alpha$, $E_J/E_C$, $|0\\rangle$. Never invent $T_1$, $T_2$, yield, or fabrication claims. Charge dispersion below the reporting floor is not zero.
+
+JSON only: {"title":"short interpretive headline","body":"2–3 sentences"}`;
 
 export function buildExplainUserPrompt(topics: TopicId[], snapshot: ChipSnapshot): string {
-  const specs = topics.map((t) => TOPICS[t]).filter(Boolean);
-  const topicLabels = specs.map((s) => `${s.label} (${s.symbol})`).join(', ');
-  const topicHeadlines = topics.map((t) => formatTopicHeadline(t, snapshot)).join(' | ');
-
-  const numbersCombined = topics.reduce<Record<string, unknown>>((acc, t) => {
-    acc[t] = topicNumbers(t, snapshot);
-    return acc;
-  }, {});
-
+  const topic = topics[0];
+  const spec = topic ? TOPICS[topic] : null;
+  const numbers = topic ? topicNumbers(topic, snapshot) : {};
   return [
-    `The student selected ${topics.length} window(s) / section(s): ${topicLabels}.`,
-    `Selected Live Labels: ${topicHeadlines}`,
-    'Specific questions / context:',
-    ...specs.map((s) => `- ${s.label}: ${s.ask}`),
-    'Numbers for selected sections:',
-    JSON.stringify(numbersCombined, null, 2),
-    snapshot.stale ? 'A newer calculation is in flight; say so if you quote outputs.' : '',
-    snapshot.error ? `Solver error (do not invent replacements): ${snapshot.error}` : '',
-    'Full chip snapshot context:',
-    JSON.stringify(snapshot),
+    spec ? `Topic: ${spec.label} (${spec.symbol}).` : 'Topic: unknown.',
+    spec?.ask ?? '',
+    'Do not repeat the UI copy. Interpret the numbers.',
+    `Numbers: ${JSON.stringify(numbers)}`,
   ]
     .filter(Boolean)
     .join('\n');
@@ -83,7 +66,8 @@ export async function explainTopic(topicOrTopics: TopicId | TopicId[], snapshot:
   if (!llmInsightsConfigured()) {
     throw new Error('GEMINI_API_KEY is not set on the server.');
   }
-  const apiKey = process.env.GEMINI_API_KEY as string;
+  const apiKey = (process.env.GEMINI_API_KEY ?? '').replace(/^["']|["']$/g, '');
+  if (!apiKey) throw new Error('GEMINI_API_KEY is not set on the server.');
 
   const topics: TopicId[] = Array.isArray(topicOrTopics) ? topicOrTopics : [topicOrTopics];
   const primaryTopic = topics.length === 1 ? topics[0] : 'multi';
@@ -98,11 +82,13 @@ export async function explainTopic(topicOrTopics: TopicId | TopicId[], snapshot:
       systemInstruction: { parts: [{ text: EXPLAIN_SYSTEM_PROMPT }] },
       contents: [{ role: 'user', parts: [{ text: buildExplainUserPrompt(topics, snapshot) }] }],
       generationConfig: {
-        temperature: 0.3,
+        temperature: 0.2,
+        maxOutputTokens: 320,
         responseMimeType: 'application/json',
+        thinkingConfig: { thinkingBudget: 0 },
       },
     }),
-    signal: AbortSignal.timeout(25_000),
+    signal: AbortSignal.timeout(8_000),
     cache: 'no-store',
   });
 

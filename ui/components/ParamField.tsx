@@ -8,10 +8,12 @@ interface ParamFieldProps {
   paramKey: ParamKey;
   value: number;
   onChange: (key: ParamKey, value: number) => void;
+  onAsk?: (key: ParamKey) => void;
+  tourId?: string;
 }
 
 /** Slider plus exact numeric entry. Out-of-range text is rejected, not silently clamped. */
-export default function ParamField({ paramKey, value, onChange }: ParamFieldProps) {
+export default function ParamField({ paramKey, value, onChange, onAsk, tourId }: ParamFieldProps) {
   const spec = PARAMS[paramKey];
   const [text, setText] = useState(value.toFixed(spec.digits));
   const [invalid, setInvalid] = useState<string | null>(null);
@@ -45,9 +47,11 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
   const atDefault = value === spec.fallback;
 
   return (
-    <div className="field">
+    <div className="field" data-tour={tourId}>
       <div className="field-head">
-        <label htmlFor={`p-${paramKey}`}>{spec.label}</label>
+        <label htmlFor={`p-${paramKey}`} className={onAsk ? 'myla-hit' : undefined} onClick={() => onAsk?.(paramKey)}>
+          {spec.label}
+        </label>
         <span className="sym">{spec.symbol}</span>
         <button
           type="button"
