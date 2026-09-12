@@ -8,6 +8,8 @@ import scqubits as scq
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 DISPERSION_RESOLUTION_KHZ = 0.001  # proposed 1 Hz reporting/selection floor
+ELEMENTARY_CHARGE_C = 1.602176634e-19
+PLANCK_J_S = 6.62607015e-34
 
 
 class Request(BaseModel):
@@ -42,6 +44,52 @@ class SearchRequest(Request):
         return self
 
 
+class MaterialScenarioRequest(Request):
+    """User-supplied effective-parameter scenario, not a material prediction."""
+
+    scenario_name: str = Field(default='Custom material scenario', min_length=1, max_length=80)
+    ej_ghz: float = Field(default=15, ge=0.01, le=50)
+    ec_ghz: float = Field(default=0.3, ge=0.01, le=2)
+    ng: float = Field(default=0, ge=0, le=1)
+    ncut: int = Field(default=30, ge=20, le=60)
+    junction_critical_current_factor: float = Field(default=1, ge=0.5, le=1.5)
+    total_capacitance_factor: float = Field(default=1, ge=0.5, le=1.5)
+
+    @model_validator(mode='after')
+    def transformed_values_stay_in_model_domain(self):
+        modified_ej = self.ej_ghz * self.junction_critical_current_factor
+        modified_ec = self.ec_ghz / self.total_capacitance_factor
+        if not 0.01 <= modified_ej <= 50:
+            raise ValueError('scenario produces EJ outside the supported 0.01–50 GHz domain')
+        if not 0.01 <= modified_ec <= 2:
+            raise ValueError('scenario produces EC outside the supported 0.01–2 GHz domain')
+        return self
+
+
+class StressRequest(DeviceRequest):
+    """Deterministic EJ/EC corner sweep; variation is not a probability model."""
+
+    variation_percent: float = Field(default=5, ge=0.1, le=20)
+
+    @model_validator(mode='after')
+    def corners_stay_in_model_domain(self):
+        factor = self.variation_percent / 100
+        if self.ej_ghz * (1 + factor) > 50 or self.ej_ghz * (1 - factor) < 0.01:
+            raise ValueError('variation produces EJ outside the supported 0.01–50 GHz domain')
+        if self.ec_ghz * (1 + factor) > 2 or self.ec_ghz * (1 - factor) < 0.01:
+            raise ValueError('variation produces EC outside the supported 0.01–2 GHz domain')
+        return self
+
+
+class TunableDeviceRequest(Request):
+    ejmax_ghz: float = Field(default=15, ge=0.01, le=50)
+    ec_ghz: float = Field(default=0.3, ge=0.01, le=2)
+    flux: float = Field(default=0, ge=0, le=1)
+    asymmetry: float = Field(default=0.1, ge=0, le=1)
+    ng: float = Field(default=0, ge=0, le=1)
+    ncut: int = Field(default=30, ge=20, le=60)
+
+
 def levels(ej, ec, ng=0, ncut=30, count=3):
     values = scq.Transmon(EJ=ej, EC=ec, ng=ng, ncut=ncut).eigenvals(evals_count=count)
     if not np.all(np.isfinite(values)):
@@ -65,6 +113,11 @@ def metrics(ej, ec, ng=0, ncut=30):
         'dispersion_khz': dispersion if resolved else None,
         'dispersion_status': 'resolved' if resolved else 'below_reporting_floor',
         'dispersion_upper_khz': max(dispersion, DISPERSION_RESOLUTION_KHZ),
+        # EJ/h is supplied in GHz and EC/h = e^2/(2hC).
+        'critical_current_na': 4 * np.pi * ELEMENTARY_CHARGE_C * float(ej) * 1e18,
+        'total_capacitance_ff': (
+            ELEMENTARY_CHARGE_C**2 / (2 * PLANCK_J_S * float(ec) * 1e9) * 1e15
+        ),
     }
 
 
@@ -80,6 +133,137 @@ def evaluate(req: DeviceRequest):
         'ncut': req.ncut, 'charge_response': curve,
         'dispersion_resolution_khz': DISPERSION_RESOLUTION_KHZ,
         'elapsed_ms': (perf_counter()-start)*1000,
+    })
+    return result
+
+
+def material_scenario(req: MaterialScenarioRequest):
+    """Compare a baseline with explicit, user-provided effective material/process factors."""
+    baseline_request = DeviceRequest(
+        ej_ghz=req.ej_ghz,
+        ec_ghz=req.ec_ghz,
+        ng=req.ng,
+        ncut=req.ncut,
+    )
+    modified_request = DeviceRequest(
+        ej_ghz=req.ej_ghz * req.junction_critical_current_factor,
+        # EC = e^2/(2C), so this assumes the supplied factor scales total C.
+        ec_ghz=req.ec_ghz / req.total_capacitance_factor,
+        ng=req.ng,
+        ncut=req.ncut,
+    )
+    baseline = evaluate(baseline_request)
+    modified = evaluate(modified_request)
+    return {
+        'status': 'ok',
+        'scenario_name': req.scenario_name,
+        'scope': 'effective-parameter sensitivity scenario; not a fabricated-device prediction',
+        'assumptions': [
+            'Josephson energy EJ scales with the user-supplied critical-current factor.',
+            'Charging energy EC scales inversely with the user-supplied total-capacitance factor.',
+            'No geometry, field participation, dielectric loss, coherence time, or fabrication yield is modeled.',
+        ],
+        'request': req.model_dump(),
+        'baseline': baseline,
+        'modified': modified,
+        'deltas': {
+            'ej_ghz': modified['ej_ghz'] - baseline['ej_ghz'],
+            'ec_ghz': modified['ec_ghz'] - baseline['ec_ghz'],
+            'f01_ghz': modified['f01_ghz'] - baseline['f01_ghz'],
+            'anharmonicity_mhz': modified['anharmonicity_mhz'] - baseline['anharmonicity_mhz'],
+            'dispersion_upper_khz': modified['dispersion_upper_khz'] - baseline['dispersion_upper_khz'],
+        },
+    }
+
+
+def stress_test(req: StressRequest):
+    """Evaluate the nine deterministic corners of independent EJ/EC variation."""
+    start = perf_counter()
+    variation = req.variation_percent / 100
+    factors = [1 - variation, 1.0, 1 + variation]
+    scenarios = []
+    for ej_factor in factors:
+        for ec_factor in factors:
+            point = metrics(
+                req.ej_ghz * ej_factor,
+                req.ec_ghz * ec_factor,
+                req.ng,
+                req.ncut,
+            )
+            point.update({'ej_factor': ej_factor, 'ec_factor': ec_factor})
+            scenarios.append(point)
+
+    def metric_range(key):
+        values = [point[key] for point in scenarios]
+        return {'min': min(values), 'max': max(values), 'span': max(values) - min(values)}
+
+    nominal = next(
+        point for point in scenarios if point['ej_factor'] == 1 and point['ec_factor'] == 1
+    )
+    return {
+        'model': 'isolated-transmon',
+        'status': 'ok',
+        'scope': 'deterministic EJ/EC sensitivity grid; not a probability or fabrication-yield model',
+        'request': req.model_dump(),
+        'nominal': nominal,
+        'scenarios': scenarios,
+        'ranges': {
+            'f01_ghz': metric_range('f01_ghz'),
+            'anharmonicity_mhz': metric_range('anharmonicity_mhz'),
+            'dispersion_upper_khz': metric_range('dispersion_upper_khz'),
+        },
+        'elapsed_ms': (perf_counter() - start) * 1000,
+    }
+
+
+def tunable_metrics(req: TunableDeviceRequest, flux=None):
+    flux_value = req.flux if flux is None else flux
+    qubit = scq.TunableTransmon(
+        EJmax=req.ejmax_ghz,
+        EC=req.ec_ghz,
+        d=req.asymmetry,
+        flux=flux_value,
+        ng=req.ng,
+        ncut=req.ncut,
+    )
+    values = qubit.eigenvals(evals_count=4)
+    if not np.all(np.isfinite(values)):
+        raise ArithmeticError('Non-finite eigenvalues; no valid result.')
+    f01 = float(values[1] - values[0])
+    f12 = float(values[2] - values[1])
+    effective_ej = req.ejmax_ghz * np.sqrt(
+        np.cos(np.pi * flux_value) ** 2
+        + req.asymmetry**2 * np.sin(np.pi * flux_value) ** 2
+    )
+    return {
+        'flux': float(flux_value),
+        'effective_ej_ghz': float(effective_ej),
+        'levels_ghz': (values - values[0]).tolist(),
+        'f01_ghz': f01,
+        'f12_ghz': f12,
+        'alpha_mhz': (f12 - f01) * 1000,
+        'anharmonicity_mhz': (f01 - f12) * 1000,
+    }
+
+
+def evaluate_tunable(req: TunableDeviceRequest):
+    start = perf_counter()
+    result = tunable_metrics(req)
+    response = [
+        tunable_metrics(req, float(flux))
+        for flux in np.linspace(0, 1, 51)
+    ]
+    result.update({
+        'model': 'symmetric-asymmetric-squid-transmon',
+        'model_version': 'v1',
+        'ejmax_ghz': req.ejmax_ghz,
+        'ec_ghz': req.ec_ghz,
+        'asymmetry': req.asymmetry,
+        'ng': req.ng,
+        'ncut': req.ncut,
+        'flux_response': response,
+        'scope': 'scqubits TunableTransmon Hamiltonian; excludes noise, geometry, and coherence',
+        'elapsed_ms': (perf_counter() - start) * 1000,
     })
     return result
 

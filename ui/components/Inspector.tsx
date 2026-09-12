@@ -1,12 +1,16 @@
 'use client';
 
+import { useState } from 'react';
 import ParamField from './ParamField';
+import MaterialSensitivity from './MaterialSensitivity';
+import DesignLab from './DesignLab';
 import { MODELED_PARTS, PART_BY_ID } from '@/lib/parts';
 import type { PartId } from '@/lib/parts';
 import { PARAMS } from '@/lib/params';
 import type { ParamKey } from '@/lib/params';
 import { num } from '@/lib/format';
-import type { DeviceParams, DeviceResult } from '@/lib/types';
+import type { DesignGoals, DeviceParams, DeviceResult } from '@/lib/types';
+import type { MaterialAppearance } from '@/lib/material-colors';
 
 interface InspectorProps {
   selected: PartId | null;
@@ -14,20 +18,48 @@ interface InspectorProps {
   result: DeviceResult | null;
   onSelect: (id: PartId) => void;
   onChange: (key: ParamKey, value: number) => void;
+  onApplyMaterialScenario: (ejGhz: number, ecGhz: number) => void;
+  goals: DesignGoals;
+  onGoalsChange: (goals: DesignGoals) => void;
+  onMaterialsChange: (topMaterial: string, baseMaterial: string) => void;
+  materials: MaterialAppearance;
 }
 
-export default function Inspector({ selected, params, result, onSelect, onChange }: InspectorProps) {
+export default function Inspector({
+  selected,
+  params,
+  result,
+  onSelect,
+  onChange,
+  onApplyMaterialScenario,
+  goals,
+  onGoalsChange,
+  onMaterialsChange,
+  materials,
+}: InspectorProps) {
   const part = selected ? PART_BY_ID[selected] : null;
+  const [tab, setTab] = useState<'edit' | 'experiment' | 'materials'>('edit');
 
   return (
     <>
-      <div className="panel-head">Inspector</div>
+      <div className="panel-head">Controls</div>
+      <div className="inspector-tabs" role="tablist" aria-label="Control sections">
+        {([
+          ['edit', 'Edit chip'],
+          ['experiment', 'Try a goal'],
+          ['materials', 'Materials'],
+        ] as const).map(([id, label]) => (
+          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
 
-      {!part && (
+      {tab === 'edit' && !part && (
         <div className="insp-section">
-          <div className="insp-title">No part selected</div>
+          <div className="insp-title">What do you want to change?</div>
           <p className="insp-role">
-            Pick a part in the tree, the 3D view or the schematic to edit what it contributes to the model.
+            Choose one chip property. The simulation updates automatically.
           </p>
           <div className="row-actions">
             {MODELED_PARTS.map((p) => (
@@ -39,7 +71,7 @@ export default function Inspector({ selected, params, result, onSelect, onChange
         </div>
       )}
 
-      {part && (
+      {tab === 'edit' && part && (
         <div className="insp-section">
           <div className="insp-title">
             <span className="swatch" style={{ background: part.color, width: 10, height: 10, borderRadius: 2, border: '1px solid rgba(0,0,0,.35)' }} />
@@ -96,20 +128,37 @@ export default function Inspector({ selected, params, result, onSelect, onChange
         </div>
       )}
 
-      <div className="insp-section">
-        <details className="tech">
-          <summary>Solver settings</summary>
-          <div className="body">
-            <ParamField paramKey="ncut" value={params.ncut} onChange={onChange} />
-            <p style={{ margin: '8px 0 0' }}>{PARAMS.ncut.meaning}</p>
-          </div>
-        </details>
-        <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '10px 0 0' }}>
-          Model: isolated transmon{result ? ` (${result.model_version})` : ''}. Simplified teaching model —
-          not a prediction of a fabricated device. Geometry and materials shown are illustrative and are not
-          inputs to the calculation.
-        </p>
-      </div>
+      {tab === 'experiment' && <DesignLab
+          params={params}
+          goals={goals}
+          onGoalsChange={onGoalsChange}
+          onApply={onApplyMaterialScenario}
+          onMaterialsChange={onMaterialsChange}
+          currentMaterials={materials}
+        />}
+
+      {tab === 'materials' && <MaterialSensitivity
+          params={params}
+          result={result}
+          onApply={onApplyMaterialScenario}
+          onMaterialsChange={onMaterialsChange}
+          topMaterial={materials.topMaterial}
+          baseMaterial={materials.baseMaterial}
+        />}
+
+      {tab === 'edit' && <div className="insp-section quiet-section">
+          <details className="tech">
+            <summary>Advanced solver setting</summary>
+            <div className="body">
+              <ParamField paramKey="ncut" value={params.ncut} onChange={onChange} />
+              <p style={{ margin: '8px 0 0' }}>{PARAMS.ncut.meaning}</p>
+            </div>
+          </details>
+          <p className="model-note">
+            Educational transmon model{result ? ` · ${result.model_version}` : ''}. It shows trends, not the
+            guaranteed behavior of a manufactured chip.
+          </p>
+        </div>}
     </>
   );
 }

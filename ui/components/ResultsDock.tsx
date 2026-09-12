@@ -1,7 +1,7 @@
 'use client';
 
 import { DASH, delta, dispersionDisplay, num, paramSummary, signed } from '@/lib/format';
-import type { ChargePoint, DeviceResult } from '@/lib/types';
+import type { ChargePoint, DesignGoals, DeviceResult } from '@/lib/types';
 
 interface ResultsDockProps {
   result: DeviceResult | null;
@@ -12,6 +12,7 @@ interface ResultsDockProps {
   onPin: () => void;
   onClearBaseline: () => void;
   onRetry: () => void;
+  goals: DesignGoals;
 }
 
 interface MetricProps {
@@ -147,9 +148,28 @@ export default function ResultsDock({
   onPin,
   onClearBaseline,
   onRetry,
+  goals,
 }: ResultsDockProps) {
   const dispersion = dispersionDisplay(result);
   const baselineDispersion = baseline ? dispersionDisplay(baseline) : null;
+  const checks = result ? [
+    {
+      label: 'Frequency',
+      pass: Math.abs(result.f01_ghz - goals.target_ghz) <= goals.tolerance_ghz,
+      detail: `${num(Math.abs(result.f01_ghz - goals.target_ghz), 3)} GHz from target`,
+    },
+    {
+      label: 'Anharmonicity',
+      pass: result.anharmonicity_mhz >= goals.min_anharmonicity_mhz,
+      detail: `${num(result.anharmonicity_mhz - goals.min_anharmonicity_mhz, 1)} MHz margin`,
+    },
+    {
+      label: 'Charge dispersion',
+      pass: result.dispersion_upper_khz <= goals.max_dispersion_khz,
+      detail: `${num(goals.max_dispersion_khz - result.dispersion_upper_khz, 3)} kHz margin`,
+    },
+  ] : [];
+  const passing = checks.filter((check) => check.pass).length;
 
   return (
     <>
@@ -158,24 +178,6 @@ export default function ResultsDock({
         <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-3)' }}>
           {result ? paramSummary(result) : error ? 'no completed calculation' : 'waiting for first result'}
         </span>
-        <span className="spacer" />
-        {baseline && (
-          <span className="pill" title={paramSummary(baseline)}>
-            baseline: {paramSummary(baseline)}
-          </span>
-        )}
-        <button
-          type="button"
-          className="btn"
-          onClick={onPin}
-          disabled={!canPin}
-          title={canPin ? 'Freeze the current completed result for comparison' : 'Available once a calculation has completed'}
-        >
-          Pin baseline
-        </button>
-        <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>
-          Clear
-        </button>
       </div>
 
       {error && (
@@ -189,57 +191,79 @@ export default function ResultsDock({
         </div>
       )}
 
-      <div className="dock-grid">
+      {result && (
+        <div className={`verdict ${passing === checks.length ? 'pass' : 'adjust'}`}>
+          <div className="verdict-copy">
+            <strong>{passing === checks.length ? 'This design passes your goals' : `This design passes ${passing} of ${checks.length} goals`}</strong>
+            <span>{passing === checks.length
+              ? 'It is close to your target speed, distinguishable between levels, and not very sensitive to charge.'
+              : 'Open “Try a goal” on the right and let the app find settings that pass.'}</span>
+          </div>
+          <div className="verdict-checks">
+            {checks.map((check) => <span key={check.label} className={`pill ${check.pass ? 'ok' : 'no'}`} title={check.detail}>{check.pass ? '✓' : '×'} {check.label}</span>)}
+          </div>
+        </div>
+      )}
+
+      <div className="result-intro">
+        <span className="eyebrow">At a glance</span>
+        <span>These are the three results that matter most for this demo.</span>
+      </div>
+      <div className="dock-grid summary-grid">
         <Metric
-          label="Transition frequency"
-          symbol="f01"
-          value={result ? `${num(result.f01_ghz, 4)} GHz` : DASH}
+          label="Operating frequency"
+          value={result ? `${num(result.f01_ghz, 3)} GHz` : DASH}
           muted={!result}
+          note="How fast the qubit changes between its two lowest states."
           deltaText={delta(result?.f01_ghz, baseline?.f01_ghz, 4, 'GHz')}
         />
         <Metric
-          label="Anharmonicity"
-          symbol="α = f12 − f01"
-          value={result ? `${signed(result.alpha_mhz, 1)} MHz` : DASH}
+          label="Level separation"
+          value={result ? `${num(result.anharmonicity_mhz, 1)} MHz` : DASH}
           muted={!result}
-          deltaText={delta(result?.alpha_mhz, baseline?.alpha_mhz, 1, 'MHz')}
+          note="Bigger separation makes it easier to control one transition without hitting another."
+          deltaText={delta(result?.anharmonicity_mhz, baseline?.anharmonicity_mhz, 1, 'MHz')}
         />
         <Metric
-          label="Charge dispersion"
-          symbol="|f01(½) − f01(0)|"
+          label="Charge sensitivity"
           value={dispersion.text}
           muted={!result || !dispersion.resolved}
-          note={dispersion.note}
+          note={dispersion.note ?? 'Smaller is better: stray charge changes the frequency less.'}
           deltaText={
             dispersion.resolved && baselineDispersion?.resolved
               ? delta(result?.dispersion_khz, baseline?.dispersion_khz, 3, 'kHz')
               : null
           }
         />
-        <Metric
-          label="Energy ratio"
-          symbol="EJ/EC"
-          value={result ? num(result.ratio, 1) : DASH}
-          muted={!result}
-          deltaText={delta(result?.ratio, baseline?.ratio, 1, '')}
-        />
       </div>
 
-      <div className="dock-lower">
-        <div className="chart">
-          <h4>Energy levels</h4>
-          <p className="cap">Relative to the ground state, GHz. Dashed = pinned baseline.</p>
-          {result ? <EnergyLevels result={result} baseline={baseline} /> : <p className="empty">{error ? 'No levels — the last calculation did not complete.' : 'Waiting for the first calculation…'}</p>}
+      <details className="results-technical">
+        <summary>Technical details and charts</summary>
+        <div className="result-actions">
+          <span>Compare changes by saving the current result as a baseline.</span>
+          {baseline && <span className="pill" title={paramSummary(baseline)}>Baseline saved</span>}
+          <button type="button" className="btn" onClick={onPin} disabled={!canPin}>Save baseline</button>
+          <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>Clear</button>
         </div>
-        <div className="chart">
-          <h4>Charge response</h4>
-          <p className="cap">
-            Shift of f01 in kHz from its own value at ng 0{result ? ` (${num(result.charge_response[0]?.f01_ghz ?? Number.NaN, 6)} GHz, ${result.charge_response.length} solver points)` : ''}.
-            Dashed = pinned baseline, against its own ng 0.
-          </p>
-          {result ? <ChargeResponse result={result} baseline={baseline} /> : <p className="empty">{error ? 'No curve — nothing is interpolated locally.' : 'Waiting for the first calculation…'}</p>}
+        <div className="dock-grid technical-grid">
+          <Metric label="EJ / EC ratio" value={result ? num(result.ratio, 1) : DASH} muted={!result} deltaText={delta(result?.ratio, baseline?.ratio, 1, '')} />
+          <Metric label="Signed anharmonicity" symbol="α = f12 − f01" value={result ? `${signed(result.alpha_mhz, 1)} MHz` : DASH} muted={!result} deltaText={delta(result?.alpha_mhz, baseline?.alpha_mhz, 1, 'MHz')} />
+          <Metric label="Critical current" symbol="derived from EJ" value={result?.critical_current_na !== undefined ? `${num(result.critical_current_na, 2)} nA` : DASH} muted={result?.critical_current_na === undefined} />
+          <Metric label="Total capacitance" symbol="derived from EC" value={result?.total_capacitance_ff !== undefined ? `${num(result.total_capacitance_ff, 2)} fF` : DASH} muted={result?.total_capacitance_ff === undefined} />
         </div>
-      </div>
+        <div className="dock-lower">
+          <div className="chart">
+            <h4>Energy levels</h4>
+            <p className="cap">Height shows energy relative to the ground state. Dashed lines show a saved baseline.</p>
+            {result ? <EnergyLevels result={result} baseline={baseline} /> : <p className="empty">Waiting for a calculation…</p>}
+          </div>
+          <div className="chart">
+            <h4>Response to stray charge</h4>
+            <p className="cap">A flatter line means the operating frequency is less sensitive to charge.</p>
+            {result ? <ChargeResponse result={result} baseline={baseline} /> : <p className="empty">Waiting for a calculation…</p>}
+          </div>
+        </div>
+      </details>
 
       {stale && (
         <p style={{ margin: 0, padding: '6px 12px 10px', fontSize: 11, color: 'var(--warn)' }}>

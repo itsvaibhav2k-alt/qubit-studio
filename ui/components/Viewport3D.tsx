@@ -2,7 +2,7 @@
 
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
 import { Edges, Line, OrbitControls } from '@react-three/drei';
-import { useEffect, useImperativeHandle, useRef } from 'react';
+import { useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Vector3, type PerspectiveCamera } from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { PART_BY_ID } from '@/lib/parts';
@@ -22,6 +22,7 @@ interface SolidProps {
   hidden: boolean;
   metal: boolean;
   onSelect: (id: PartId) => void;
+  color?: string;
 }
 
 const ACCENT = '#1a6fe0';
@@ -36,6 +37,7 @@ function Solid({
   hidden,
   metal,
   onSelect,
+  color,
 }: SolidProps) {
   const part = PART_BY_ID[id];
   const y = position[1] + explodeY * explode;
@@ -62,7 +64,7 @@ function Solid({
       >
         <boxGeometry args={size} />
         <meshStandardMaterial
-          color={selected ? '#cfe0f8' : part.color}
+          color={selected ? '#cfe0f8' : (color ?? part.color)}
           metalness={metal ? 0.55 : 0.05}
           roughness={metal ? 0.35 : 0.85}
           emissive={selected ? ACCENT : '#000000'}
@@ -127,10 +129,11 @@ interface SceneProps {
   explode: number;
   onSelect: (id: PartId) => void;
   controlsRef: React.RefObject<OrbitControlsImpl | null>;
+  materialColors: Partial<Record<PartId, string>>;
 }
 
 /** Illustrative chip geometry. Dimensions are exaggerated for legibility. */
-function Scene({ selected, hiddenParts, explode, onSelect, controlsRef }: SceneProps) {
+function Scene({ selected, hiddenParts, explode, onSelect, controlsRef, materialColors }: SceneProps) {
   const hidden = (id: PartId) => hiddenParts.includes(id);
   const common = { explode, onSelect, selected: false, hidden: false, metal: true };
 
@@ -157,6 +160,7 @@ function Scene({ selected, hiddenParts, explode, onSelect, controlsRef }: SceneP
         metal={false}
         selected={selected === 'substrate'}
         hidden={hidden('substrate')}
+        color={materialColors.substrate}
       />
 
       {groundBars.map((bar, index) => (
@@ -169,6 +173,7 @@ function Scene({ selected, hiddenParts, explode, onSelect, controlsRef }: SceneP
           explodeY={0.1}
           selected={selected === 'ground'}
           hidden={hidden('ground')}
+          color={materialColors.ground}
         />
       ))}
 
@@ -182,6 +187,7 @@ function Scene({ selected, hiddenParts, explode, onSelect, controlsRef }: SceneP
           explodeY={0.26}
           selected={selected === 'capacitor'}
           hidden={hidden('capacitor')}
+          color={materialColors.capacitor}
         />
       ))}
 
@@ -193,6 +199,7 @@ function Scene({ selected, hiddenParts, explode, onSelect, controlsRef }: SceneP
         explodeY={0.42}
         selected={selected === 'junction'}
         hidden={hidden('junction')}
+        color={materialColors.junction}
       />
 
       <Solid
@@ -203,6 +210,7 @@ function Scene({ selected, hiddenParts, explode, onSelect, controlsRef }: SceneP
         explodeY={0.26}
         selected={selected === 'gate'}
         hidden={hidden('gate')}
+        color={materialColors.gate}
       />
 
       <FitToViewport />
@@ -232,8 +240,10 @@ export default function Viewport3D({
   onSelect,
   onClearSelection,
   handleRef,
+  materialColors,
 }: Viewport3DProps) {
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
+  const [rendererKey, setRendererKey] = useState(0);
 
   useImperativeHandle(handleRef, () => ({
     resetView: () => controlsRef.current?.reset(),
@@ -245,10 +255,17 @@ export default function Viewport3D({
 
   return (
     <Canvas
+      key={rendererKey}
       camera={{ position: [1.75, 1.35, 2.05], fov: 38 }}
       dpr={[1, 2]}
       onPointerMissed={onClearSelection}
       gl={{ antialias: true }}
+      onCreated={({ gl }) => {
+        gl.domElement.addEventListener('webglcontextlost', (event) => {
+          event.preventDefault();
+          window.setTimeout(() => setRendererKey((current) => current + 1), 100);
+        }, { once: true });
+      }}
       style={{ position: 'absolute', inset: 0 }}
     >
       <Scene
@@ -257,6 +274,7 @@ export default function Viewport3D({
         explode={explode}
         onSelect={onSelect}
         controlsRef={controlsRef}
+        materialColors={materialColors}
       />
     </Canvas>
   );

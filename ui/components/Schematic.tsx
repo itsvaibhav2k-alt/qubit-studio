@@ -15,6 +15,7 @@ interface SchematicProps {
   hiddenParts: PartId[];
   onSelect: (id: PartId) => void;
   onClearSelection: () => void;
+  materialColors: Partial<Record<PartId, string>>;
 }
 
 /** Flat circuit view of the same device. Selection is shared with the 3D view. */
@@ -24,6 +25,7 @@ export default function Schematic({
   hiddenParts,
   onSelect,
   onClearSelection,
+  materialColors,
 }: SchematicProps) {
   const stroke = (id: PartId) => (selected === id ? ACCENT : WIRE);
   const width = (id: PartId) => (selected === id ? 3 : 1.8);
@@ -65,6 +67,7 @@ export default function Schematic({
             strokeWidth={selected === 'substrate' ? 2.4 : 1.4}
             pointerEvents="stroke"
           />
+          <rect x="28" y="32" width="10" height="10" rx="2" fill={materialColors.substrate} />
           <text x="32" y="44" fontSize="10" fill={labelFill('substrate')}>
             substrate — illustrative
           </text>
@@ -102,6 +105,7 @@ export default function Schematic({
             width="36"
             height="34"
             fill="#fff"
+            style={{ fill: materialColors.junction ?? '#fff', fillOpacity: 0.32 }}
             stroke={stroke('junction')}
             strokeWidth={width('junction')}
           />
@@ -126,7 +130,7 @@ export default function Schematic({
           <path d="M300 86 V132 M300 150 V216" stroke={stroke('capacitor')} strokeWidth={width('capacitor')} fill="none" />
           <path
             d="M274 132 H326 M274 150 H326"
-            stroke={stroke('capacitor')}
+            stroke={selected === 'capacitor' ? ACCENT : (materialColors.capacitor ?? stroke('capacitor'))}
             strokeWidth={selected === 'capacitor' ? 3.4 : 2.4}
             fill="none"
           />

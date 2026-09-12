@@ -12,7 +12,9 @@ import type { ParamKey } from '@/lib/params';
 import { PART_BY_ID } from '@/lib/parts';
 import type { PartId } from '@/lib/parts';
 import { useEvaluate } from '@/lib/useEvaluate';
-import type { DeviceParams, DeviceResult } from '@/lib/types';
+import type { DesignGoals, DeviceParams, DeviceResult } from '@/lib/types';
+import { materialColor, materialPartColors } from '@/lib/material-colors';
+import type { MaterialAppearance } from '@/lib/material-colors';
 
 const Viewport3D = dynamic(() => import('@/components/Viewport3D'), {
   ssr: false,
@@ -20,6 +22,20 @@ const Viewport3D = dynamic(() => import('@/components/Viewport3D'), {
 });
 
 type ViewMode = '3d' | 'schematic' | 'split';
+
+const DEFAULT_GOALS: DesignGoals = {
+  target_ghz: 5,
+  tolerance_ghz: 0.25,
+  min_anharmonicity_mhz: 200,
+  max_dispersion_khz: 10,
+};
+
+const PRESETS: Record<string, DeviceParams> = {
+  default: DEFAULT_PARAMS,
+  reference: { ej_ghz: 30, ec_ghz: 1.2, ng: 0.3, ncut: 31 },
+  protected: { ej_ghz: 18, ec_ghz: 0.22, ng: 0, ncut: 30 },
+  anharmonic: { ej_ghz: 10, ec_ghz: 0.4, ng: 0, ncut: 30 },
+};
 
 export default function Page() {
   const [params, setParams] = useState<DeviceParams>(DEFAULT_PARAMS);
@@ -29,6 +45,13 @@ export default function Page() {
   const [explode, setExplode] = useState(0);
   const [baseline, setBaseline] = useState<DeviceResult | null>(null);
   const [hintOpen, setHintOpen] = useState(true);
+  const [goals, setGoals] = useState<DesignGoals>(DEFAULT_GOALS);
+  const [materials, setMaterials] = useState<MaterialAppearance>({
+    topMaterial: 'Al',
+    baseMaterial: 'Si',
+    topColor: materialColor('Al'),
+    baseColor: materialColor('Si'),
+  });
   const viewportRef = useRef<ViewportHandle | null>(null);
 
   const evaluation = useEvaluate(params);
@@ -37,6 +60,25 @@ export default function Page() {
   const changeParam = useCallback((key: ParamKey, value: number) => {
     setParams((current) => ({ ...current, [key]: clampParam(key, value) }));
   }, []);
+
+  const applyMaterialScenario = useCallback((ejGhz: number, ecGhz: number) => {
+    setParams((current) => ({
+      ...current,
+      ej_ghz: clampParam('ej_ghz', ejGhz),
+      ec_ghz: clampParam('ec_ghz', ecGhz),
+    }));
+  }, []);
+
+  const changeMaterials = useCallback((topMaterial: string, baseMaterial: string) => {
+    setMaterials({
+      topMaterial,
+      baseMaterial,
+      topColor: materialColor(topMaterial),
+      baseColor: materialColor(baseMaterial),
+    });
+  }, []);
+
+  const currentMaterialColors = materialPartColors(materials);
 
   const selectPart = useCallback((id: PartId) => {
     setSelected(id);
@@ -73,6 +115,24 @@ export default function Page() {
         ? { className: 'badge live', text: 'Live result' }
         : { className: 'badge', text: 'Calculating…' };
 
+  const exportReport = () => {
+    const report = {
+      exported_at: new Date().toISOString(),
+      application: 'Qubit Studio',
+      parameters: params,
+      design_goals: goals,
+      result,
+      pinned_baseline: baseline,
+      disclaimer: 'Simplified isolated-transmon calculation; not a fabricated-device prediction.',
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `qubit-studio-${Date.now()}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="shell">
       <header className="topbar">
@@ -81,6 +141,20 @@ export default function Page() {
         </div>
         <span className="spacer" />
         <span className={statusBadge.className}>{statusBadge.text}</span>
+        <label className="preset-control">
+          Demo
+          <select defaultValue="" onChange={(event) => {
+            if (event.target.value) setParams(PRESETS[event.target.value]);
+            event.target.value = '';
+          }}>
+            <option value="" disabled>Choose preset…</option>
+            <option value="default">Balanced default</option>
+            <option value="reference">scqubits reference</option>
+            <option value="protected">Low charge sensitivity</option>
+            <option value="anharmonic">High anharmonicity</option>
+          </select>
+        </label>
+        <button type="button" className="btn" onClick={exportReport} disabled={!result}>Export report</button>
         <button
           type="button"
           className="btn"
@@ -178,7 +252,12 @@ export default function Page() {
               onSelect={selectPart}
               onClearSelection={clearSelection}
               handleRef={viewportRef}
+              materialColors={currentMaterialColors}
             />
+            <div className="material-legend" aria-label="Current visual materials">
+              <span><i style={{ background: materials.topColor }} /> Metal · {materials.topMaterial}</span>
+              <span><i style={{ background: materials.baseColor }} /> Base · {materials.baseMaterial}</span>
+            </div>
             <span className="viewport-note">Drag to orbit · right-drag to pan · scroll to zoom</span>
           </div>
           {view === 'split' && <div className="split-divider" />}
@@ -189,6 +268,7 @@ export default function Page() {
               hiddenParts={hiddenParts}
               onSelect={selectPart}
               onClearSelection={clearSelection}
+              materialColors={currentMaterialColors}
             />
           </div>
         </div>
@@ -201,6 +281,11 @@ export default function Page() {
           result={result}
           onSelect={selectPart}
           onChange={changeParam}
+          onApplyMaterialScenario={applyMaterialScenario}
+          goals={goals}
+          onGoalsChange={setGoals}
+          onMaterialsChange={changeMaterials}
+          materials={materials}
         />
       </aside>
 
@@ -214,6 +299,7 @@ export default function Page() {
           onPin={() => result && setBaseline(result)}
           onClearBaseline={() => setBaseline(null)}
           onRetry={retry}
+          goals={goals}
         />
       </section>
     </div>

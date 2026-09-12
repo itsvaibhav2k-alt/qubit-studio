@@ -33,12 +33,14 @@ Override the solver location with `QUBIT_API_URL` (default `http://127.0.0.1:800
 
 ```
 app/page.tsx              workspace shell, all shared state
-app/api/evaluate/route.ts the only hop to :8000 (same-origin proxy, validates bounds)
+app/api/*                same-origin proxies to the simulation service on :8000
 components/Viewport3D     react-three-fiber scene, orbit/pan/zoom, selectable meshes
 components/Schematic      SVG circuit, same selection state
 components/PartsTree      named hierarchy, visibility toggles
 components/Inspector      selected-part properties, progressive technical detail
 components/ResultsDock    metrics, energy levels, charge response, baseline compare
+components/DesignLab      goals, optimizer, stress grid, tunable-transmon calculator
+components/MaterialSensitivity free-form stack scenarios and imported evidence
 components/ParamField     slider + exact numeric entry
 lib/evaluate-state.ts     latest-edit-wins reducer (pure, tested)
 lib/format.ts             number/dispersion/delta formatting (pure, tested)
@@ -128,12 +130,22 @@ The dock and inspector reflow instead of overflowing.
   was not pursued). The three defects Hermes reported (substrate clipping, over-zoomed
   initial camera, flat charge-response axis) and the split-frustum blocker are fixed above.
 
+## Added design-lab workflow
+
+- `/search` is wired to a goal-based optimizer with preview/apply and feasibility counts.
+- A plain-language verdict checks frequency, anharmonicity, and charge-dispersion goals.
+- A deterministic nine-corner stress grid sweeps independent EJ/EC variation.
+- A scqubits TunableTransmon calculator adds flux and junction asymmetry.
+- Critical current and effective total capacitance are derived from EJ and EC.
+- Demo presets and local JSON report export support a short, repeatable presentation.
+- The material sandbox accepts arbitrary pairings. Imported evidence is shown only for exact
+  matches; all other combinations use explicit user-controlled sensitivity factors.
+
 ## Known gaps
 
-- `/search` is not wired. The final review marked it out of scope; the backend endpoint is
-  untouched and there is no dead button for it anywhere in the UI.
-- Material presets and geometry→physics are deliberately absent. Visible materials are
-  illustrative; no material name is mapped to any performance claim.
+- Geometry is still illustrative and is not mapped to Hamiltonian or loss parameters.
+- Stress results are sensitivity corners, not a probability distribution or fabrication yield.
+- Material scenarios do not predict a real device or a topological qubit.
 - Undo/redo is not implemented. There is per-parameter reset, a global `Reset parameters`,
   and the pinned baseline, but no history stack — so the "one edit is one undo action" rule
   has nothing to violate yet.
