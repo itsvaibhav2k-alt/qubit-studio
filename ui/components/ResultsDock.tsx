@@ -1,0 +1,251 @@
+'use client';
+
+import { DASH, delta, dispersionDisplay, num, paramSummary, signed } from '@/lib/format';
+import type { ChargePoint, DeviceResult } from '@/lib/types';
+
+interface ResultsDockProps {
+  result: DeviceResult | null;
+  baseline: DeviceResult | null;
+  stale: boolean;
+  error: string | null;
+  canPin: boolean;
+  onPin: () => void;
+  onClearBaseline: () => void;
+  onRetry: () => void;
+}
+
+interface MetricProps {
+  label: string;
+  symbol?: string;
+  value: string;
+  muted?: boolean;
+  note?: string;
+  deltaText?: { text: string; tone: 'up' | 'down' | 'flat' } | null;
+}
+
+function Metric({ label, symbol, value, muted, note, deltaText }: MetricProps) {
+  return (
+    <div className="metric">
+      <div className="k">
+        {label} {symbol && <span className="sym">{symbol}</span>}
+      </div>
+      <div className={`v${muted ? ' none' : ''}`}>{value}</div>
+      {deltaText && <div className={`d ${deltaText.tone}`}>{deltaText.text}</div>}
+      {note && <div className="note">{note}</div>}
+    </div>
+  );
+}
+
+const LEVEL_W = 300;
+const LEVEL_H = 132;
+
+function EnergyLevels({ result, baseline }: { result: DeviceResult; baseline: DeviceResult | null }) {
+  const levels = result.levels_ghz;
+  const top = Math.max(...levels, ...(baseline?.levels_ghz ?? [])) || 1;
+  const y = (value: number) => LEVEL_H - 14 - (value / top) * (LEVEL_H - 28);
+
+  return (
+    <svg viewBox={`0 0 ${LEVEL_W} ${LEVEL_H}`} role="img" aria-label="Energy levels relative to the ground state">
+      {baseline?.levels_ghz.map((value, index) => (
+        <line
+          key={`b-${index}`}
+          x1="40"
+          x2={LEVEL_W - 8}
+          y1={y(value)}
+          y2={y(value)}
+          stroke="#b7bec8"
+          strokeWidth="1"
+          strokeDasharray="4 3"
+        />
+      ))}
+      {levels.map((value, index) => (
+        <g key={index}>
+          <line x1="40" x2={LEVEL_W - 60} y1={y(value)} y2={y(value)} stroke="#1b2027" strokeWidth="2" />
+          <text x="32" y={y(value) + 4} fontSize="11" textAnchor="end" fill="#5c6672" fontFamily="ui-monospace, Menlo, monospace">
+            |{index}⟩
+          </text>
+          <text x={LEVEL_W - 54} y={y(value) + 4} fontSize="10" fill="#878f9b" fontFamily="ui-monospace, Menlo, monospace">
+            {num(value, 3)}
+          </text>
+        </g>
+      ))}
+      {levels.length > 2 && (
+        <>
+          <line x1="62" x2="62" y1={y(levels[0])} y2={y(levels[1])} stroke="#1a6fe0" strokeWidth="1.4" />
+          <text x="68" y={(y(levels[0]) + y(levels[1])) / 2 + 3} fontSize="10" fill="#1a6fe0">
+            f01 {num(result.f01_ghz, 3)} GHz
+          </text>
+          <line x1="62" x2="62" y1={y(levels[1])} y2={y(levels[2])} stroke="#5c6672" strokeWidth="1.4" />
+          <text x="68" y={(y(levels[1]) + y(levels[2])) / 2 + 3} fontSize="10" fill="#5c6672">
+            f12 {num(result.f12_ghz, 3)} GHz
+          </text>
+        </>
+      )}
+    </svg>
+  );
+}
+
+const CHART_W = 340;
+const CHART_H = 132;
+
+function ChargeResponse({ result, baseline }: { result: DeviceResult; baseline: DeviceResult | null }) {
+  const points = result.charge_response;
+  if (points.length === 0) return <p className="empty">The backend returned no charge-response points.</p>;
+
+  // The dispersion is a few kHz on a ~5 GHz line: plot the shift, not the absolute.
+  const reference = points.reduce((a, b) => (b.ng < a.ng ? b : a)).f01_ghz;
+  const basePoints = baseline?.charge_response ?? [];
+  const baseReference = basePoints.length
+    ? basePoints.reduce((a, b) => (b.ng < a.ng ? b : a)).f01_ghz
+    : null;
+  const shiftKhz = (f01: number, ref: number) => (f01 - ref) * 1e6;
+
+  const values = [
+    ...points.map((p) => shiftKhz(p.f01_ghz, reference)),
+    ...(baseReference === null ? [] : basePoints.map((p) => shiftKhz(p.f01_ghz, baseReference))),
+  ];
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const span = hi - lo;
+  const pad = span === 0 ? 1 : 0;
+  const x = (ng: number) => 52 + ng * (CHART_W - 68);
+  const y = (khz: number) => CHART_H - 22 - ((khz - lo + pad) / (span + 2 * pad)) * (CHART_H - 40);
+  const path = (data: ChargePoint[], ref: number) =>
+    data.map((p) => `${x(p.ng)},${y(shiftKhz(p.f01_ghz, ref))}`).join(' ');
+
+  return (
+    <svg viewBox={`0 0 ${CHART_W} ${CHART_H}`} role="img" aria-label="Transition frequency shift versus offset charge">
+      <line x1="52" x2={CHART_W - 16} y1={CHART_H - 22} y2={CHART_H - 22} stroke="#d2d7de" />
+      <line x1="52" x2="52" y1="10" y2={CHART_H - 22} stroke="#d2d7de" />
+      {baseReference !== null && (
+        <polyline points={path(basePoints, baseReference)} fill="none" stroke="#b7bec8" strokeWidth="1.4" strokeDasharray="4 3" />
+      )}
+      <polyline points={path(points, reference)} fill="none" stroke="#1a6fe0" strokeWidth="1.8" />
+      <circle cx={x(result.ng)} cy={y(shiftKhz(result.f01_ghz, reference))} r="3.6" fill="#1a6fe0" />
+      <text x="52" y={CHART_H - 8} fontSize="10" fill="#878f9b">
+        ng 0
+      </text>
+      <text x={CHART_W - 16} y={CHART_H - 8} fontSize="10" textAnchor="end" fill="#878f9b">
+        1
+      </text>
+      <text x="48" y="14" fontSize="10" textAnchor="end" fill="#878f9b" fontFamily="ui-monospace, Menlo, monospace">
+        {signed(hi, 3)}
+      </text>
+      <text x="48" y={CHART_H - 24} fontSize="10" textAnchor="end" fill="#878f9b" fontFamily="ui-monospace, Menlo, monospace">
+        {signed(lo, 3)}
+      </text>
+    </svg>
+  );
+}
+
+export default function ResultsDock({
+  result,
+  baseline,
+  stale,
+  error,
+  canPin,
+  onPin,
+  onClearBaseline,
+  onRetry,
+}: ResultsDockProps) {
+  const dispersion = dispersionDisplay(result);
+  const baselineDispersion = baseline ? dispersionDisplay(baseline) : null;
+
+  return (
+    <>
+      <div className="panel-head">
+        Results
+        <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-3)' }}>
+          {result ? paramSummary(result) : error ? 'no completed calculation' : 'waiting for first result'}
+        </span>
+        <span className="spacer" />
+        {baseline && (
+          <span className="pill" title={paramSummary(baseline)}>
+            baseline: {paramSummary(baseline)}
+          </span>
+        )}
+        <button
+          type="button"
+          className="btn"
+          onClick={onPin}
+          disabled={!canPin}
+          title={canPin ? 'Freeze the current completed result for comparison' : 'Available once a calculation has completed'}
+        >
+          Pin baseline
+        </button>
+        <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>
+          Clear
+        </button>
+      </div>
+
+      {error && (
+        <div className="errbox">
+          <strong>No result.</strong> {error}
+          <div style={{ marginTop: 7 }}>
+            <button type="button" className="btn" onClick={onRetry}>
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="dock-grid">
+        <Metric
+          label="Transition frequency"
+          symbol="f01"
+          value={result ? `${num(result.f01_ghz, 4)} GHz` : DASH}
+          muted={!result}
+          deltaText={delta(result?.f01_ghz, baseline?.f01_ghz, 4, 'GHz')}
+        />
+        <Metric
+          label="Anharmonicity"
+          symbol="α = f12 − f01"
+          value={result ? `${signed(result.alpha_mhz, 1)} MHz` : DASH}
+          muted={!result}
+          deltaText={delta(result?.alpha_mhz, baseline?.alpha_mhz, 1, 'MHz')}
+        />
+        <Metric
+          label="Charge dispersion"
+          symbol="|f01(½) − f01(0)|"
+          value={dispersion.text}
+          muted={!result || !dispersion.resolved}
+          note={dispersion.note}
+          deltaText={
+            dispersion.resolved && baselineDispersion?.resolved
+              ? delta(result?.dispersion_khz, baseline?.dispersion_khz, 3, 'kHz')
+              : null
+          }
+        />
+        <Metric
+          label="Energy ratio"
+          symbol="EJ/EC"
+          value={result ? num(result.ratio, 1) : DASH}
+          muted={!result}
+          deltaText={delta(result?.ratio, baseline?.ratio, 1, '')}
+        />
+      </div>
+
+      <div className="dock-lower">
+        <div className="chart">
+          <h4>Energy levels</h4>
+          <p className="cap">Relative to the ground state, GHz. Dashed = pinned baseline.</p>
+          {result ? <EnergyLevels result={result} baseline={baseline} /> : <p className="empty">{error ? 'No levels — the last calculation did not complete.' : 'Waiting for the first calculation…'}</p>}
+        </div>
+        <div className="chart">
+          <h4>Charge response</h4>
+          <p className="cap">
+            Shift of f01 in kHz from its own value at ng 0{result ? ` (${num(result.charge_response[0]?.f01_ghz ?? Number.NaN, 6)} GHz, ${result.charge_response.length} solver points)` : ''}.
+            Dashed = pinned baseline, against its own ng 0.
+          </p>
+          {result ? <ChargeResponse result={result} baseline={baseline} /> : <p className="empty">{error ? 'No curve — nothing is interpolated locally.' : 'Waiting for the first calculation…'}</p>}
+        </div>
+      </div>
+
+      {stale && (
+        <p style={{ margin: 0, padding: '6px 12px 10px', fontSize: 11, color: 'var(--warn)' }}>
+          Updating — the values above still describe {result ? paramSummary(result) : 'the previous parameters'}.
+        </p>
+      )}
+    </>
+  );
+}
