@@ -71,8 +71,6 @@ export default function Page() {
   const [selectedTopics, setSelectedTopics] = useState<Set<TopicId>>(new Set());
   const [llmOpen, setLlmOpen] = useState(false);
   const [mylaModal, setMylaModal] = useState(true);
-  const [mylaAnchor, setMylaAnchor] = useState({ x: 24, y: 72 });
-  const lastClick = useRef({ x: 24, y: 72 });
   const tourActiveRef = useRef(false);
   const workshopActiveRef = useRef(false);
   const [workshopIndex, setWorkshopIndex] = useState<number | null>(null);
@@ -144,19 +142,10 @@ export default function Page() {
     setSelectedTopics(current => new Set([...current, 'materials']));
   }, [updateComponentMaterials]);
 
-  useEffect(() => {
-    const track = (event: PointerEvent) => {
-      lastClick.current = { x: event.clientX, y: event.clientY };
-    };
-    window.addEventListener('pointerdown', track, true);
-    return () => window.removeEventListener('pointerdown', track, true);
-  }, []);
-
   const askAbout = useCallback((id: TopicId) => {
     if (tourActiveRef.current || workshopActiveRef.current) return;
     setSelectedTopics(new Set([id]));
     setMylaModal(false);
-    setMylaAnchor(lastClick.current);
     setLlmOpen(true);
   }, []);
 
@@ -171,7 +160,6 @@ export default function Page() {
     const id = topicsArray[0] ?? 'f01';
     if (!topicsArray.length) setSelectedTopics(new Set([id]));
     setMylaModal(true);
-    setMylaAnchor(lastClick.current);
     setLlmOpen(true);
   }, [topicsArray]);
 
@@ -350,7 +338,6 @@ export default function Page() {
         onOpenChange={setLlmOpen}
         topics={topicsArray}
         snapshot={snapshot}
-        anchor={mylaAnchor}
         modal={mylaModal}
         onTopicsChange={topics => setSelectedTopics(new Set(topics))}
       />

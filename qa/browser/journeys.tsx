@@ -127,7 +127,7 @@ async function explainChecks(){
     assert(document.activeElement?.closest('[role="dialog"]'),'Real Tab key keeps focus inside the modal');
   }
   assert(requests.length===start,'Opening dialog never automatically calls provider');
-  clickText('Ask Gemini'); const first=await next('/api/explain','deliberate explanation');
+  clickText('Ask Gemini about this'); const first=await next('/api/explain','deliberate explanation');
   invoke('duplicate'); await pause();
   assert(requests.filter(r=>r.route==='/api/explain').length===1,'Repeated clicks and same-event calls produce one active request');
   assert(JSON.stringify(first.body.topics)===JSON.stringify(['f01','junction']),'Topics are deduplicated');
@@ -139,7 +139,7 @@ async function explainChecks(){
   assert(!current.explain.answer && !current.explain.loading,'Late closed-dialog success cannot reattach');
   openExplanation('explain-opener-secondary'); await pause();
   assert(requests.length===start+1,'Reopening does not automatically retry');
-  clickText('Ask Gemini'); const escaped=await next('/api/explain','explanation cancelled by Escape');
+  clickText('Ask Gemini about this'); const escaped=await next('/api/explain','explanation cancelled by Escape');
   await (globalThis as any).qaPressKey('Escape');
   await until(()=>!current.open && document.activeElement?.id==='explain-opener-secondary','Escape restores the new focused opener');
   assert(escaped.signal.aborted,'Escape cancels the active explanation');
@@ -147,7 +147,7 @@ async function explainChecks(){
   assert(!current.explain.answer && !current.explain.loading,'Late Escape response cannot reattach');
   const afterEscape=requests.length;openExplanation();await pause();
   assert(requests.length===afterEscape,'Reopen after Escape never creates an automatic request');
-  clickText('Ask Gemini'); const cancelled=await next('/api/explain','explicit Cancel button request');
+  clickText('Ask Gemini about this'); const cancelled=await next('/api/explain','explicit Cancel button request');
   clickText('Cancel');
   assert(current.open && !current.explain.loading && cancelled.signal.aborted,'Cancel aborts transport while keeping the actual dialog open');
   answer(cancelled,provider.obsolete); await pause();
@@ -155,7 +155,7 @@ async function explainChecks(){
   const afterCancel=requests.length; await pause();
   assert(requests.length===afterCancel,'Cancel does not automatically retry');
   pass('Explicit Cancel keeps the dialog open, aborts work, rejects the late answer, and issues no automatic retry.');
-  clickText('Ask Gemini'); const second=await next('/api/explain','second deliberate request');
+  clickText('Ask Gemini about this'); const second=await next('/api/explain','second deliberate request');
   answer(second,provider.success);
   await until(()=>current.explain.answer,'answer shown');
   assert(document.body.textContent?.includes('MOCK response'),'Mock explanation is rendered by real dialog component');
@@ -165,14 +165,14 @@ async function explainChecks(){
   invoke('context',{baseline:fixtures.evaluate16});
   assert(!current.explain.answer,'Baseline-only change invalidates answer in the first render');
   await pause(); assert(requests.length===before,'Baseline updates never create paid request loops');
-  clickText('Ask Gemini'); const pending=await next('/api/explain','baseline snapshot request');
+  clickText('Ask Gemini about this'); const pending=await next('/api/explain','baseline snapshot request');
   invoke('context',{goals:{...g,max_dispersion_khz:1}}); await pause();
   assert(pending.signal.aborted && !current.explain.answer && !current.explain.loading,'Goal edit invalidates pending explanation');
   fail(pending); await pause(); assert(!current.explain.error,'Aborted old failure is ignored');
   invoke('ask'); const failCurrent=await next('/api/explain','failure request');
   answer(failCurrent,provider.unavailable,503);
   await until(()=>current.explain.error,'readable failure');
-  clickText('Retry'); const retry=await next('/api/explain','explicit Retry button');
+  clickText('Retry Gemini explanation'); const retry=await next('/api/explain','explicit Retry button');
   answer(retry,provider.retry); await until(()=>current.explain.answer,'retry answer');
   invoke('context',{materials:{...m,topMaterial:'Ta'}});
   assert(!current.explain.answer,'Visual material evidence edits invalidate previous explanation');
