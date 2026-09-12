@@ -1,5 +1,5 @@
 import type { PartId } from './parts.ts';
-import type { DispersionStatus } from './types.ts';
+import type { DesignGoals, DeviceParams, DispersionStatus } from './types.ts';
 
 export type InsightTone = 'ok' | 'watch' | 'alert' | 'info';
 export type InsightSource = 'local' | 'llm';
@@ -22,6 +22,8 @@ export interface InsightBundle {
 }
 
 export interface SnapshotOutputs {
+  params: DeviceParams;
+  model: string;
   f01_ghz: number;
   f12_ghz: number;
   alpha_mhz: number;
@@ -37,11 +39,32 @@ export interface SnapshotOutputs {
   total_capacitance_ff?: number;
 }
 
-export interface SnapshotBaseline {
-  f01_ghz: number;
-  alpha_mhz: number;
-  ratio: number;
-  dispersion_khz: number | null;
+export type SnapshotBaseline = SnapshotOutputs;
+
+export interface SnapshotExperiment {
+  kind: 'search' | 'stress' | 'tunable' | 'material';
+  freshness: 'current' | 'outdated';
+  status: 'idle' | 'pending' | 'ready' | 'error';
+  model: string;
+  scope: string;
+  inputs: Record<string, number | string>;
+  summary: Record<string, number | string | null>;
+}
+
+export interface SnapshotMaterials {
+  topMaterial: string;
+  baseMaterial: string;
+  scope: 'visual selection; material evidence does not alter the electrical solver';
+  evidence: Array<{
+    id: string;
+    kind: 'resonator-loss' | 'device-stack';
+    reference: string;
+    deposition: string;
+    treatment: string;
+    geometry: string;
+    lowPowerLossMin?: number;
+    lowPowerLossMax?: number;
+  }>;
 }
 
 export interface ChipSnapshot {
@@ -55,6 +78,10 @@ export interface ChipSnapshot {
   };
   outputs: SnapshotOutputs | null;
   baseline: SnapshotBaseline | null;
+  readiness: 'ready' | 'pending' | 'error' | 'unavailable';
+  goals?: DesignGoals;
+  materials?: SnapshotMaterials;
+  experiments?: SnapshotExperiment[];
   stale: boolean;
   error: string | null;
 }

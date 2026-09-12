@@ -1,26 +1,28 @@
 'use client';
 
-import { useState } from 'react';
 import { num, signed } from '@/lib/format';
 import { BCQT_SOURCE, MATERIAL_CATALOG, MATERIAL_RECORDS } from '@/lib/material-records';
 import { materialColor } from '@/lib/material-colors';
-import type { DeviceParams, DeviceResult, MaterialScenarioResult } from '@/lib/types';
+import type { ExperimentSession } from '@/lib/experiment-session';
+import { validDeviceResult } from '@/lib/device-snapshot';
+import { sameParams } from '@/lib/params';
+import type { DeviceParams, DeviceResult } from '@/lib/types';
 
 interface MaterialSensitivityProps {
   params: DeviceParams;
   result: DeviceResult | null;
-  onApply: (ejGhz: number, ecGhz: number) => void;
+  onApply: (params: DeviceParams) => void;
+  session: ExperimentSession;
   onMaterialsChange: (topMaterial: string, baseMaterial: string) => void;
   topMaterial: string;
   baseMaterial: string;
 }
 
-export default function MaterialSensitivity({ params, result, onApply, onMaterialsChange, topMaterial, baseMaterial }: MaterialSensitivityProps) {
-  const [junctionFactor, setJunctionFactor] = useState(0.9);
-  const [capacitanceFactor, setCapacitanceFactor] = useState(1.1);
-  const [comparison, setComparison] = useState<MaterialScenarioResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+export default function MaterialSensitivity({ session, params, result, onApply, onMaterialsChange, topMaterial, baseMaterial }: MaterialSensitivityProps) {
+  const { junctionFactor, capacitanceFactor } = session.controls;
+  const comparison = session.material.result, error = session.material.error;
+  const loading = session.material.status === 'pending';
+  const compare = () => session.run('material');
 
   const matchingRecord = MATERIAL_RECORDS
     .filter((record) => record.kind === 'resonator-loss' && record.material === topMaterial && record.substrate === baseMaterial)
@@ -31,7 +33,7 @@ export default function MaterialSensitivity({ params, result, onApply, onMateria
   const majoranaRecord = MATERIAL_RECORDS.find((record) => record.id === 'microsoft-majorana-2-2026');
 
   const decayScaleUs = (loss: number) =>
-    result ? 1e6 / (2 * Math.PI * result.f01_ghz * 1e9 * loss) : null;
+    result && validDeviceResult(result) && sameParams(params, result) ? 1e6 / (2 * Math.PI * result.f01_ghz * 1e9 * loss) : null;
   const decayLow = matchingRecord?.kind === 'resonator-loss'
     ? decayScaleUs(matchingRecord.lowPowerLossMax)
     : null;
@@ -45,35 +47,6 @@ export default function MaterialSensitivity({ params, result, onApply, onMateria
       layer === 'top' ? material : topMaterial,
       layer === 'base' ? material : baseMaterial,
     );
-    setComparison(null);
-  };
-
-  const compare = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await fetch('/api/material-scenario', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          scenario_name: `${topMaterial.trim()} on ${baseMaterial.trim()}`.slice(0, 80),
-          ...params,
-          junction_critical_current_factor: junctionFactor,
-          total_capacitance_factor: capacitanceFactor,
-        }),
-      });
-      const body = (await response.json()) as MaterialScenarioResult | { error?: string; detail?: unknown };
-      if (!response.ok) {
-        const failure = body as { error?: string; detail?: unknown };
-        throw new Error(failure.error ?? JSON.stringify(failure.detail ?? body));
-      }
-      setComparison(body as MaterialScenarioResult);
-    } catch (reason) {
-      setComparison(null);
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setLoading(false);
-    }
   };
 
   return (
@@ -155,8 +128,7 @@ export default function MaterialSensitivity({ params, result, onApply, onMateria
           step={0.01}
           value={junctionFactor}
           onChange={(event) => {
-            setJunctionFactor(Number(event.target.value));
-            setComparison(null);
+            session.setControls({ junctionFactor: Number(event.target.value) });
           }}
         />
       </label>
@@ -170,20 +142,17 @@ export default function MaterialSensitivity({ params, result, onApply, onMateria
           step={0.01}
           value={capacitanceFactor}
           onChange={(event) => {
-            setCapacitanceFactor(Number(event.target.value));
-            setComparison(null);
+            session.setControls({ capacitanceFactor: Number(event.target.value) });
           }}
         />
       </label>
 
       <div className="row-actions">
-        <button type="button" className="btn primary" onClick={compare} disabled={loading}>
-          {loading ? 'Calculating…' : 'Compare scenario'}
+        <button type="button" className="btn primary" aria-label="Compare scenario" aria-busy={loading} onClick={compare} disabled={loading || !!session.validationError('material')}>
+          <span role="status">{loading ? 'Calculating…' : 'Compare scenario'}</span>
         </button>
         <button type="button" className="btn" onClick={() => {
-          setJunctionFactor(1);
-          setCapacitanceFactor(1);
-          setComparison(null);
+          session.setControls({ junctionFactor: 1, capacitanceFactor: 1 });
         }}>
           Clear effects
         </button>
@@ -195,19 +164,20 @@ export default function MaterialSensitivity({ params, result, onApply, onMateria
           sensitivity calculation—not a topological-qubit simulation.
         </p>
       )}
-      {error && <p className="scenario-error">{error}</p>}
+      {(error || session.validationError('material')) && <p className="scenario-error" role="status">{error || session.validationError('material')}</p>}
 
       {comparison && (
         <div className="scenario-result" aria-live="polite">
+          {!session.material.current && <p className="scenario-error" role="status">Outdated result — rerun this scenario.</p>}
           <dl className="kv">
-            <dt>Scenario</dt><dd>{topMaterial} / {baseMaterial}</dd>
+            <dt>Scenario</dt><dd>{comparison.scenario_name}</dd>
             <dt>Frequency</dt><dd>{num(comparison.baseline.f01_ghz, 3)} → {num(comparison.modified.f01_ghz, 3)} GHz</dd>
             <dt>Change</dt><dd>{signed(comparison.deltas.f01_ghz, 3)} GHz</dd>
             <dt>Anharmonicity</dt><dd>{num(comparison.baseline.anharmonicity_mhz, 1)} → {num(comparison.modified.anharmonicity_mhz, 1)} MHz</dd>
-            <dt>Dispersion</dt><dd>{num(comparison.baseline.dispersion_upper_khz, 3)} → {num(comparison.modified.dispersion_upper_khz, 3)} kHz</dd>
+            <dt>Dispersion bound</dt><dd>{num(comparison.baseline.dispersion_upper_khz, 3)} → {num(comparison.modified.dispersion_upper_khz, 3)} kHz</dd>
           </dl>
-          <button type="button" className="btn" onClick={() => onApply(comparison.modified.ej_ghz, comparison.modified.ec_ghz)}>
-            Apply modified EJ and EC
+          <button type="button" className="btn" disabled={!session.getApply('material')} onClick={() => { const applied = session.getApply('material'); if (applied) onApply(applied); }}>
+            Apply evaluated scenario
           </button>
           <p className="scenario-scope">{comparison.scope}.</p>
         </div>

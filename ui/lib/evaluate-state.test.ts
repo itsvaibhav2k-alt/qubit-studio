@@ -45,7 +45,7 @@ describe('evalReducer', () => {
     assert.equal(state.status, 'ready');
   });
 
-  it('should clear the displayed numbers when the newest request fails', () => {
+  it('retains the previous completed snapshot as outdated when the newest request fails', () => {
     const state = apply([
       { type: 'request', seq: 1 },
       { type: 'success', seq: 1, result: result(15) },
@@ -53,7 +53,8 @@ describe('evalReducer', () => {
       { type: 'failure', seq: 2, error: 'backend unreachable' },
     ]);
     assert.equal(state.status, 'error');
-    assert.equal(state.result, null);
+    assert.equal(state.result?.ej_ghz, 15);
+    assert.equal(isStale(state), true);
     assert.equal(state.error, 'backend unreachable');
   });
 

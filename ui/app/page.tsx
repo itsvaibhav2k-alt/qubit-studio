@@ -19,6 +19,10 @@ import { useExplain } from '@/lib/useExplain';
 import type { DesignGoals, DeviceParams, DeviceResult } from '@/lib/types';
 import { materialColor, materialPartColors } from '@/lib/material-colors';
 import type { MaterialAppearance } from '@/lib/material-colors';
+import { useExperimentSession } from '@/lib/useExperimentSession';
+import { completedDevice, validDeviceParams } from '@/lib/device-snapshot';
+import { buildExportReport } from '@/lib/export-report';
+import { validExperimentGoals } from '@/lib/experiment-session';
 
 const Viewport3D = dynamic(() => import('@/components/Viewport3D'), {
   ssr: false,
@@ -65,6 +69,7 @@ export default function Page() {
 
   const evaluation = useEvaluate(params);
   const { result, error, stale, status, retry } = evaluation;
+  const experiments = useExperimentSession(params, goals, materials);
 
   // Build a compact snapshot for the LLM
   const snapshot = useMemo(
@@ -76,23 +81,23 @@ export default function Page() {
         selected,
         stale,
         error,
+        goals,
+        materials,
+        experiments: experiments.evidence,
       }),
-    [params, result, baseline, selected, stale, error],
+    [params, result, baseline, selected, stale, error, goals, materials, experiments.evidence],
   );
 
   const topicsArray = useMemo(() => Array.from(selectedTopics), [selectedTopics]);
   const explain = useExplain(snapshot, topicsArray);
 
   const changeParam = useCallback((key: ParamKey, value: number) => {
+    if (!Number.isFinite(value)) return;
     setParams((current) => ({ ...current, [key]: clampParam(key, value) }));
   }, []);
 
-  const applyMaterialScenario = useCallback((ejGhz: number, ecGhz: number) => {
-    setParams((current) => ({
-      ...current,
-      ej_ghz: clampParam('ej_ghz', ejGhz),
-      ec_ghz: clampParam('ec_ghz', ecGhz),
-    }));
+  const applyMaterialScenario = useCallback((evaluated: DeviceParams) => {
+    if (validDeviceParams(evaluated)) setParams({ ...evaluated });
   }, []);
 
   const changeMaterials = useCallback((topMaterial: string, baseMaterial: string) => {
@@ -147,20 +152,22 @@ export default function Page() {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSelected(null);
+      if (event.key !== 'Escape' || event.defaultPrevented || llmOpen) return;
+      if (event.target instanceof Element && event.target.closest('input, select, textarea, [role="dialog"]')) return;
+      setSelected(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [llmOpen]);
 
   const show3d = view === '3d' || view === 'split';
   const showSchematic = view === 'schematic' || view === 'split';
   // Pinning is only meaningful for a completed calculation of the current parameters.
-  const canPin = status === 'ready' && !stale && result !== null;
+  const canPin = completedDevice(params, result, status, stale);
   const atDefaults = sameParams(params, DEFAULT_PARAMS);
 
   const statusBadge = error
-    ? { className: 'badge err', text: 'Disconnected' }
+    ? { className: 'badge err', text: 'Calculation failed' }
     : stale
       ? { className: 'badge stale', text: 'Updating…' }
       : status === 'ready'
@@ -168,15 +175,8 @@ export default function Page() {
         : { className: 'badge', text: 'Calculating…' };
 
   const exportReport = () => {
-    const report = {
-      exported_at: new Date().toISOString(),
-      application: 'Qubit Studio',
-      parameters: params,
-      design_goals: goals,
-      result,
-      pinned_baseline: baseline,
-      disclaimer: 'Simplified isolated-transmon calculation; not a fabricated-device prediction.',
-    };
+    const report = buildExportReport({ params, result, status, stale, goals, materials, baseline, experiments: experiments.evidence });
+    if (!report) return;
     const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
@@ -192,7 +192,7 @@ export default function Page() {
           Qubit Studio <span>transmon · simplified model</span>
         </div>
         <span className="spacer" />
-        <span className={statusBadge.className}>{statusBadge.text}</span>
+        <span className={statusBadge.className} role="status">{statusBadge.text}</span>
         <label className="preset-control">
           Demo
           <select defaultValue="" onChange={(event) => {
@@ -206,7 +206,7 @@ export default function Page() {
             <option value="anharmonic">High anharmonicity</option>
           </select>
         </label>
-        <button type="button" className="btn" onClick={exportReport} disabled={!result}>Export report</button>
+        <button type="button" className="btn" onClick={exportReport} disabled={!canPin || !validExperimentGoals(goals)}>Export report</button>
         <button
           type="button"
           className="btn"
@@ -292,7 +292,7 @@ export default function Page() {
           </span>
         </div>
 
-        <div className="stage-body">
+        <div className={`stage-body${view === 'split' ? ' is-split' : ''}`}>
           <div className="viewport" style={{ display: show3d ? 'flex' : 'none' }}>
             <div className="badge-row">
               {selected && <span className="badge live">{PART_BY_ID[selected].name}</span>}
@@ -330,7 +330,8 @@ export default function Page() {
         <Inspector
           selected={selected}
           params={params}
-          result={result}
+          result={canPin ? result : null}
+          session={experiments}
           onSelect={selectPart}
           onChange={changeParam}
           onApplyMaterialScenario={applyMaterialScenario}
@@ -352,7 +353,7 @@ export default function Page() {
           stale={stale}
           error={error}
           canPin={canPin}
-          onPin={() => result && setBaseline(result)}
+          onPin={() => canPin && result && setBaseline(structuredClone(result))}
           onClearBaseline={() => setBaseline(null)}
           onRetry={retry}
           goals={goals}

@@ -35,6 +35,10 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
       setInvalid(`The model accepts ${spec.min} to ${spec.max}${spec.unit ? ` ${spec.unit}` : ''}.`);
       return;
     }
+    if (paramKey === 'ncut' && !Number.isInteger(parsed)) {
+      setInvalid('The charge basis cutoff must be a whole number.');
+      return;
+    }
     setInvalid(null);
     // Mark this value as already reflected so the echo back from the parent
     // does not overwrite what is being typed.
@@ -75,6 +79,7 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
           inputMode="decimal"
           aria-label={`${spec.label} exact value`}
           aria-invalid={invalid ? 'true' : 'false'}
+          aria-describedby={invalid ? `p-${paramKey}-error` : undefined}
           value={text}
           onChange={(event) => commitText(event.target.value)}
           onBlur={() => {
@@ -86,7 +91,7 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
         />
         <span className="unit">{spec.unit}</span>
       </div>
-      {invalid && <p className="field-msg">{invalid}</p>}
+      {invalid && <p className="field-msg" id={`p-${paramKey}-error`} role="status">{invalid}</p>}
     </div>
   );
 }

@@ -11,8 +11,10 @@
     "start": "next start -p 3100",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test lib/*.test.ts",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "test": "node ../qa/run-unit.cjs",
+    "check": "npm run test && npm run lint && npm run build && npm run typecheck && npm run test:browser",
+    "test:browser": "node ../qa/browser/run.cjs",
+    "test:browser:negative": "node ../qa/browser/negative-controls.cjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.8",
@@ -37,6 +39,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
+    "playwright": "1.63.0",
     "typescript": "^5"
   }
 }

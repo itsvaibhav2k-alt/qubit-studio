@@ -67,7 +67,7 @@ export const TOPICS: Record<TopicId, TopicSpec> = {
     id: 'junction',
     label: 'Josephson junction',
     symbol: 'E_J',
-    ask: 'Explain the Josephson junction and its current E_J in simple language. What happens if the student raises or lowers it?',
+    ask: 'Explain the Josephson junction and its Josephson energy E_J in simple language. If provided, connect E_J to the derived critical current in nA. What happens if the student raises or lowers E_J?',
   },
   capacitor: {
     id: 'capacitor',
@@ -121,6 +121,7 @@ export function topicNumbers(
     E_J_GHz: params.ej_ghz,
     E_C_GHz: params.ec_ghz,
     n_g: params.ng,
+    ncut: params.ncut,
     EJ_over_EC: Number(num(params.ratio, 1)),
   };
   if (!out) return { ...base, solver: 'no completed calculation' };
@@ -149,9 +150,9 @@ export function topicNumbers(
     case 'levels':
       return { ...shared, levels_GHz: out.levels_ghz };
     case 'junction':
-      return { ...shared, control: 'E_J slider' };
+      return { ...shared, control: 'E_J slider', critical_current_nA: out.critical_current_na ?? null };
     case 'capacitor':
-      return { ...shared, control: 'E_C slider' };
+      return { ...shared, control: 'E_C slider', total_capacitance_fF: out.total_capacitance_ff ?? null };
     case 'gate':
       return { ...shared, control: 'n_g slider' };
     case 'ground':

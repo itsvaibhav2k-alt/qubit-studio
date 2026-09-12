@@ -19,8 +19,7 @@ export default function PartsTree({ selected, hiddenParts, onSelect, onToggleVis
         <button
           type="button"
           className={`tree-row${part.modeled ? '' : ' dim'}`}
-          aria-selected={selected === part.id}
-          role="option"
+          aria-pressed={selected === part.id}
           onClick={() => onSelect(part.id)}
         >
           <span className="swatch" style={{ background: part.color, opacity: hidden ? 0.3 : 1 }} />
@@ -28,10 +27,10 @@ export default function PartsTree({ selected, hiddenParts, onSelect, onToggleVis
             {part.name}
           </span>
           <span className="tag">{part.param ? PARAMS[part.param].symbol : 'context'}</span>
-          <span
+        </button>
+          <button
+            type="button"
             className="eye"
-            role="button"
-            tabIndex={0}
             aria-label={`${hidden ? 'Show' : 'Hide'} ${part.name}`}
             title={`${hidden ? 'Show' : 'Hide'} in views`}
             onClick={(event) => {
@@ -47,14 +46,13 @@ export default function PartsTree({ selected, hiddenParts, onSelect, onToggleVis
             }}
           >
             {hidden ? '◌' : '◉'}
-          </span>
-        </button>
+          </button>
       </div>
     );
   };
 
   return (
-    <div className="tree" role="listbox" aria-label="Parts tree">
+    <div className="tree" role="group" aria-label="Parts tree">
       <div className="tree-group">Transmon qubit</div>
       {MODELED_PARTS.map(row)}
       <div className="tree-group">Context, not modelled</div>

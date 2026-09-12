@@ -13,17 +13,16 @@ export async function proxySimulation(request: Request, endpoint: string): Promi
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(30_000)]),
       cache: 'no-store',
     });
     return new Response(await upstream.text(), {
       status: upstream.status,
       headers: { 'Content-Type': upstream.headers.get('content-type') ?? 'application/json' },
     });
-  } catch (error) {
+  } catch {
     return Response.json({
-      error: `Simulation backend did not answer at ${BACKEND}. Start it, then retry.`,
-      detail: error instanceof Error ? error.message : String(error),
+      error: 'The simulation service is unavailable or timed out. Retry the calculation.',
     }, { status: 502 });
   }
 }

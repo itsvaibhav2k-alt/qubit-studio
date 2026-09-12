@@ -29,7 +29,8 @@ export async function POST(request: Request): Promise<Response> {
         { status: 400 },
       );
     }
-    payload[key] = key === 'ncut' ? Math.round(value) : value;
+    if (key === 'ncut' && !Number.isInteger(value)) return Response.json({ error: 'Parameter "ncut" must be a whole number.' }, { status: 400 });
+    payload[key] = value;
   }
 
   let upstream: Response;
@@ -38,14 +39,13 @@ export async function POST(request: Request): Promise<Response> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.any([request.signal, AbortSignal.timeout(30_000)]),
       cache: 'no-store',
     });
-  } catch (error) {
+  } catch {
     return Response.json(
       {
-        error: `Simulation backend did not answer at ${BACKEND}. Start it, then retry — no values are estimated locally.`,
-        detail: error instanceof Error ? error.message : String(error),
+        error: 'The simulation service is unavailable or timed out. Retry the calculation.',
       },
       { status: 502 },
     );

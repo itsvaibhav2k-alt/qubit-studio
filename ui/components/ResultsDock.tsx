@@ -3,6 +3,7 @@
 import { DASH, delta, dispersionDisplay, num, paramSummary, signed } from '@/lib/format';
 import type { TopicId } from '@/lib/explain-topics';
 import type { ChargePoint, DesignGoals, DeviceResult } from '@/lib/types';
+import { validExperimentGoals } from '@/lib/experiment-session';
 
 interface ResultsDockProps {
   result: DeviceResult | null;
@@ -166,7 +167,8 @@ export default function ResultsDock({
 }: ResultsDockProps) {
   const dispersion = dispersionDisplay(result);
   const baselineDispersion = baseline ? dispersionDisplay(baseline) : null;
-  const checks = result ? [
+  const goalsValid = validExperimentGoals(goals);
+  const checks = result && canPin && goalsValid ? [
     {
       label: 'Frequency',
       pass: Math.abs(result.f01_ghz - goals.target_ghz) <= goals.tolerance_ghz,
@@ -196,7 +198,7 @@ export default function ResultsDock({
 
       {error && (
         <div className="errbox">
-          <strong>No result.</strong> {error}
+          <strong>Calculation failed.</strong> {error}
           <div style={{ marginTop: 7 }}>
             <button type="button" className="btn" onClick={onRetry}>
               Retry
@@ -205,12 +207,20 @@ export default function ResultsDock({
         </div>
       )}
 
-      {result && (
+      {(!canPin || !goalsValid) && (
+        <div className="verdict pending" role="status">
+          <div className="verdict-copy">
+            <strong>{error ? 'Current design has no completed result' : !goalsValid ? 'Complete your goal values' : 'Calculating current design…'}</strong>
+            <span>{canPin ? 'The current calculation is complete; goal assessment waits for valid goal values.' : result ? 'Previous result shown below is outdated; goal assessment and actions wait for a current result.' : 'Goal assessment is available when the solver finishes.'}</span>
+          </div>
+        </div>
+      )}
+      {checks.length > 0 && (
         <div className={`verdict ${passing === checks.length ? 'pass' : 'adjust'}`}>
           <div className="verdict-copy">
             <strong>{passing === checks.length ? 'This design passes your goals' : `This design passes ${passing} of ${checks.length} goals`}</strong>
             <span>{passing === checks.length
-              ? 'It is close to your target speed, distinguishable between levels, and not very sensitive to charge.'
+              ? 'This completed calculation meets your selected frequency, level-separation, and charge-sensitivity thresholds.'
               : 'Open “Try a goal” on the right and let the app find settings that pass.'}</span>
           </div>
           <div className="verdict-checks">
@@ -260,14 +270,14 @@ export default function ResultsDock({
         />
       </div>
 
-      <details className="results-technical">
-        <summary>Technical details and charts</summary>
-        <div className="result-actions">
-          <span>Compare changes by saving the current result as a baseline.</span>
+      <div className="result-actions">
+          <span>{baseline ? `Frozen baseline · ${paramSummary(baseline)}` : 'Save a baseline before applying a recommendation.'}</span>
           {baseline && <span className="pill" title={paramSummary(baseline)}>Baseline saved</span>}
           <button type="button" className="btn" onClick={onPin} disabled={!canPin}>Save baseline</button>
-          <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>Clear</button>
+          <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>Clear baseline</button>
         </div>
+      <details className="results-technical">
+        <summary>Technical details and charts</summary>
         <div className="dock-grid technical-grid">
           <Metric topicId="ratio" selected={selectedTopics.has('ratio')} onSelectTopic={onSelectTopic} label="EJ / EC ratio" value={result ? num(result.ratio, 1) : DASH} muted={!result} deltaText={delta(result?.ratio, baseline?.ratio, 1, '')} />
           <Metric topicId="alpha" selected={selectedTopics.has('alpha')} onSelectTopic={onSelectTopic} label="Signed anharmonicity" symbol="α = f12 − f01" value={result ? `${signed(result.alpha_mhz, 1)} MHz` : DASH} muted={!result} deltaText={delta(result?.alpha_mhz, baseline?.alpha_mhz, 1, 'MHz')} />
@@ -300,7 +310,7 @@ export default function ResultsDock({
 
       {stale && (
         <p style={{ margin: 0, padding: '6px 12px 10px', fontSize: 11, color: 'var(--warn)' }}>
-          Updating — the values above still describe {result ? paramSummary(result) : 'the previous parameters'}.
+          Outdated — the values above describe {result ? paramSummary(result) : 'the previous parameters'}.
         </p>
       )}
     </>

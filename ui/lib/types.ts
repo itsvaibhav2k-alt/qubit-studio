@@ -42,19 +42,32 @@ export interface DesignGoals {
   max_dispersion_khz: number;
 }
 
-export interface SearchCandidate extends DeviceResult {
+/** The engine's metrics() summaries do not contain an evaluation curve or cutoff. */
+export type DeviceMetrics = Pick<DeviceResult,
+  'ej_ghz' | 'ec_ghz' | 'ng' | 'ratio' | 'raw_levels_ghz' | 'levels_ghz'
+  | 'f01_ghz' | 'f12_ghz' | 'alpha_mhz' | 'anharmonicity_mhz'
+  | 'dispersion_khz' | 'dispersion_status' | 'dispersion_upper_khz'
+  | 'critical_current_na' | 'total_capacitance_ff'>;
+
+export interface SearchCandidate extends DeviceMetrics {
   feasible: boolean;
   margins: Record<string, number>;
   violations: string[];
 }
 
 export interface SearchResult {
+  model: string;
+  model_version: string;
+  request: Record<string, number>;
   status: 'feasible' | 'infeasible';
   selected: SearchCandidate | null;
+  candidates: SearchCandidate[];
   evaluated_count: number;
   feasible_count: number;
   selection_rule: string;
   optimality_scope: string;
+  dispersion_resolution_khz: number;
+  elapsed_ms: number;
 }
 
 export interface MetricRange {
@@ -64,9 +77,13 @@ export interface MetricRange {
 }
 
 export interface StressResult {
+  model: string;
   status: 'ok';
   scope: string;
-  scenarios: Array<DeviceResult & { ej_factor: number; ec_factor: number }>;
+  request: DeviceParams & { variation_percent: number };
+  nominal: DeviceMetrics;
+  scenarios: Array<DeviceMetrics & { ej_factor: number; ec_factor: number }>;
+  elapsed_ms: number;
   ranges: {
     f01_ghz: MetricRange;
     anharmonicity_mhz: MetricRange;
@@ -86,10 +103,14 @@ export interface TunablePoint {
 
 export interface TunableResult extends TunablePoint {
   model: string;
+  model_version: string;
   scope: string;
   ejmax_ghz: number;
   ec_ghz: number;
   asymmetry: number;
+  ng: number;
+  ncut: number;
+  elapsed_ms: number;
   flux_response: TunablePoint[];
 }
 
@@ -98,6 +119,11 @@ export interface MaterialScenarioResult {
   scenario_name: string;
   scope: string;
   assumptions: string[];
+  request: DeviceParams & {
+    scenario_name: string;
+    junction_critical_current_factor: number;
+    total_capacitance_factor: number;
+  };
   baseline: DeviceResult;
   modified: DeviceResult;
   deltas: {

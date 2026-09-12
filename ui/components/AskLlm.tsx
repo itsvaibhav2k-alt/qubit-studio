@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -21,31 +22,31 @@ interface AskLlmProps {
 }
 
 export default function AskLlm({ open, onOpenChange, topics, snapshot, explain }: AskLlmProps) {
-  const { answer, loading, error, ask } = explain;
-  const askedKey = useRef<string | null>(null);
-
-  const topicsKey = [...topics].sort().join(',');
+  const { answer, loading, error, ask, cancel, canAsk } = explain;
+  const opener = useRef<HTMLElement | null>(null);
   const headline =
     topics.length === 1
       ? formatTopicHeadline(topics[0], snapshot)
-      : `Ask LLM: ${topics.length} Windows Selected`;
+      : `Explain ${topics.length} selected sections`;
 
   useEffect(() => {
-    if (!open || topics.length === 0) {
-      if (!open) askedKey.current = null;
-      return;
-    }
-    const key = `${topicsKey}:${snapshot.params.ej_ghz}:${snapshot.params.ec_ghz}:${snapshot.params.ng}:${snapshot.outputs?.f01_ghz ?? 'none'}`;
-    if (askedKey.current === key) return;
-    askedKey.current = key;
-    ask();
-  }, [ask, open, snapshot.outputs?.f01_ghz, snapshot.params.ec_ghz, snapshot.params.ej_ghz, snapshot.params.ng, topics.length, topicsKey]);
+    if (!open) cancel();
+    return cancel;
+  }, [cancel, open]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="ask-dialog sm:max-w-lg" showCloseButton>
+    <Dialog open={open} onOpenChange={(next: boolean) => { if (!next) cancel(); onOpenChange(next); }}>
+      <DialogContent className="ask-dialog sm:max-w-lg" showCloseButton
+        onOpenAutoFocus={() => {
+          const focused = document.activeElement;
+          if (focused instanceof HTMLElement && !focused.closest('[role="dialog"]')) opener.current = focused;
+        }}
+        onCloseAutoFocus={(event) => {
+          if (opener.current?.isConnected) { event.preventDefault(); opener.current.focus(); }
+        }}>
         <DialogHeader>
           <DialogTitle>{headline}</DialogTitle>
+          <DialogDescription>Ask Gemini about the completed calculation and selected evidence.</DialogDescription>
           <div className="text-sm text-muted-foreground mt-1">
             {topics.length > 0 ? (
               <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -54,7 +55,7 @@ export default function AskLlm({ open, onOpenChange, topics, snapshot, explain }
                   return (
                     <span
                       key={t}
-                      className="px-2 py-0.5 text-xs rounded bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium"
+                      className="topic-badge"
                     >
                       {spec?.label ?? t} ({spec?.symbol ?? ''})
                     </span>
@@ -67,8 +68,8 @@ export default function AskLlm({ open, onOpenChange, topics, snapshot, explain }
           </div>
         </DialogHeader>
 
-        {loading && <p className="ask-status">Asking Gemini to explain selected windows…</p>}
-        {error && <p className="insight-error">{error}</p>}
+        {loading && <p className="ask-status" role="status">Asking Gemini to explain selected sections…</p>}
+        {error && <p className="insight-error" role="alert">{error}</p>}
         {answer && (
           <article className="ask-answer">
             <h4 className="text-base font-semibold mb-2">{answer.title}</h4>
@@ -83,16 +84,15 @@ export default function AskLlm({ open, onOpenChange, topics, snapshot, explain }
           </article>
         )}
         {!loading && !error && !answer && (
-          <p className="ask-status">Preparing an explanation across selected windows.</p>
+          <p className="ask-status" role="status">{canAsk ? 'Ready to explain this completed snapshot.' : topics.length === 0 ? 'Select a section to explain.' : snapshot.readiness === 'error' ? 'Resolve the solver error before asking Gemini.' : snapshot.readiness !== 'ready' ? 'Wait for the current calculation to finish.' : 'Check the design goals before asking Gemini.'}</p>
         )}
 
-        {answer && !loading && (
-          <div className="ask-dialog-actions mt-4 flex justify-end">
-            <Button type="button" variant="outline" size="sm" onClick={ask}>
-              Ask again
-            </Button>
-          </div>
-        )}
+        <div className="ask-dialog-actions mt-4 flex justify-end gap-2">
+          {loading && <Button type="button" variant="outline" size="sm" onClick={cancel}>Cancel</Button>}
+          <Button type="button" variant={answer ? 'outline' : 'default'} size="sm" onClick={ask} disabled={!canAsk || loading}>
+            {error ? 'Retry' : answer ? 'Ask again' : 'Ask Gemini'}
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

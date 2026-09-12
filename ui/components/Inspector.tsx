@@ -12,6 +12,7 @@ import { num } from '@/lib/format';
 import type { DesignGoals, DeviceParams, DeviceResult } from '@/lib/types';
 import type { MaterialAppearance } from '@/lib/material-colors';
 import { TOPICS, type TopicId } from '@/lib/explain-topics';
+import type { ExperimentSession } from '@/lib/useExperimentSession';
 
 interface InspectorProps {
   selected: PartId | null;
@@ -19,7 +20,8 @@ interface InspectorProps {
   result: DeviceResult | null;
   onSelect: (id: PartId) => void;
   onChange: (key: ParamKey, value: number) => void;
-  onApplyMaterialScenario: (ejGhz: number, ecGhz: number) => void;
+  onApplyMaterialScenario: (params: DeviceParams) => void;
+  session: ExperimentSession;
   goals: DesignGoals;
   onGoalsChange: (goals: DesignGoals) => void;
   onMaterialsChange: (topMaterial: string, baseMaterial: string) => void;
@@ -34,6 +36,7 @@ export default function Inspector({
   selected,
   params,
   result,
+  session,
   onSelect,
   onChange,
   onApplyMaterialScenario,
@@ -59,11 +62,17 @@ export default function Inspector({
           ['materials', 'Materials'],
           ['ask', `Ask AI${selectedTopics.size > 0 ? ` (${selectedTopics.size})` : ''}`],
         ] as const).map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+          <button key={id} type="button" role="tab" id={`tab-${id}`} aria-controls="inspector-panel" tabIndex={tab === id ? 0 : -1} aria-selected={tab === id} onClick={() => setTab(id)} onKeyDown={(event) => {
+            const ids = ['edit', 'experiment', 'materials', 'ask'] as const;
+            const index = ids.indexOf(id);
+            const next = event.key === 'ArrowRight' ? ids[(index + 1) % ids.length] : event.key === 'ArrowLeft' ? ids[(index + ids.length - 1) % ids.length] : event.key === 'Home' ? ids[0] : event.key === 'End' ? ids[ids.length - 1] : null;
+            if (next) { event.preventDefault(); setTab(next); document.getElementById(`tab-${next}`)?.focus(); }
+          }}>
             {label}
           </button>
         ))}
       </div>
+      <div role="tabpanel" id="inspector-panel" aria-labelledby={`tab-${tab}`} tabIndex={0}>
 
       {tab === 'edit' && !part && (
         <div className="insp-section">
@@ -139,6 +148,7 @@ export default function Inspector({
       )}
 
       {tab === 'experiment' && <DesignLab
+          session={session}
           params={params}
           goals={goals}
           onGoalsChange={onGoalsChange}
@@ -148,6 +158,7 @@ export default function Inspector({
         />}
 
       {tab === 'materials' && <MaterialSensitivity
+          session={session}
           params={params}
           result={result}
           onApply={onApplyMaterialScenario}
@@ -213,6 +224,7 @@ export default function Inspector({
             guaranteed behavior of a manufactured chip.
           </p>
         </div>}
+      </div>
     </>
   );
 }
