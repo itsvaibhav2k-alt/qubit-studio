@@ -5,6 +5,7 @@ import MathText from '@/components/MathText';
 import { validDeviceParams } from '@/lib/device-snapshot';
 import { num } from '@/lib/format';
 import { mathValue } from '@/lib/math-format';
+import { PARAMS } from '@/lib/params';
 import {
   capacitorAreaFromEc,
   DEFAULT_GEOMETRY_ASSUMPTIONS,
@@ -17,6 +18,19 @@ import type { DeviceParams } from '@/lib/types';
 interface GeometryEditorProps {
   params: DeviceParams;
   onApply: (ejGhz: number, ecGhz: number) => void;
+}
+
+const CAPACITOR_AREA_MIN = capacitorAreaFromEc(
+  PARAMS.ec_ghz.max,
+  DEFAULT_GEOMETRY_ASSUMPTIONS.capacitanceDensityFfUm2,
+);
+const CAPACITOR_AREA_MAX = capacitorAreaFromEc(
+  PARAMS.ec_ghz.min,
+  DEFAULT_GEOMETRY_ASSUMPTIONS.capacitanceDensityFfUm2,
+);
+
+function capacitorAreaFromSlider(value: string): number {
+  return Math.exp(Number(value));
 }
 
 export default function GeometryEditor({ params, onApply }: GeometryEditorProps) {
@@ -57,8 +71,15 @@ export default function GeometryEditor({ params, onApply }: GeometryEditorProps)
 
         <label className="geometry-field">
           <span><strong>Capacitor area</strong><output><MathText math={mathValue(capacitorArea, 0, 'um2')} /></output></span>
-          <input type="range" min="100" max="3000" step="10" value={capacitorArea} onChange={(event) => setCapacitorArea(Number(event.target.value))} />
-          <small>A larger capacitor lowers <MathText math="E_C" /> in this simplified conversion.</small>
+          <input
+            type="range"
+            min={Math.log(CAPACITOR_AREA_MIN)}
+            max={Math.log(CAPACITOR_AREA_MAX)}
+            step="0.001"
+            value={Math.log(capacitorArea)}
+            onChange={(event) => setCapacitorArea(capacitorAreaFromSlider(event.target.value))}
+          />
+          <small>A larger capacitor lowers <MathText math="E_C" />. The curved slider scale keeps both small and large areas adjustable.</small>
         </label>
 
         <div className="geometry-preview">

@@ -14,7 +14,7 @@ import type { SearchCandidate } from '@/lib/types';
 
 interface TradeoffChartProps {
   candidates: SearchCandidate[];
-  selected: SearchCandidate;
+  selected: SearchCandidate | null;
   onSelect: (candidate: SearchCandidate) => void;
 }
 
@@ -33,22 +33,22 @@ function extent(values: number[]): [number, number] {
 }
 
 interface ChartGraphicProps {
-  feasible: SearchCandidate[];
-  selected: SearchCandidate;
+  candidates: SearchCandidate[];
+  selected: SearchCandidate | null;
   onSelect: (candidate: SearchCandidate) => void;
   expanded?: boolean;
 }
 
-function ChartGraphic({ feasible, selected, onSelect, expanded = false }: ChartGraphicProps) {
-  const logCharge = feasible.map((candidate) => Math.log10(candidate.dispersion_upper_khz));
-  const separation = feasible.map((candidate) => candidate.anharmonicity_mhz);
+function ChartGraphic({ candidates, selected, onSelect, expanded = false }: ChartGraphicProps) {
+  const logCharge = candidates.map((candidate) => Math.log10(Math.max(candidate.dispersion_upper_khz, 1e-9)));
+  const separation = candidates.map((candidate) => candidate.anharmonicity_mhz);
   const [minX, maxX] = extent(logCharge);
   const [minY, maxY] = extent(separation);
   const plotWidth = WIDTH - LEFT - RIGHT;
   const plotHeight = HEIGHT - TOP - BOTTOM;
-  const x = (value: number) => LEFT + ((Math.log10(value) - minX) / (maxX - minX)) * plotWidth;
+  const x = (value: number) => LEFT + ((Math.log10(Math.max(value, 1e-9)) - minX) / (maxX - minX)) * plotWidth;
   const y = (value: number) => TOP + (1 - (value - minY) / (maxY - minY)) * plotHeight;
-  const selectedRatio = selected.ratio;
+  const selectedRatio = selected?.ratio ?? null;
 
   return (
     <svg
@@ -82,29 +82,30 @@ function ChartGraphic({ feasible, selected, onSelect, expanded = false }: ChartG
         );
       })}
       <foreignObject x={LEFT} y={HEIGHT - 17} width={plotWidth} height="18" className="tradeoff-axis-label">
-        <div style={{ textAlign: 'center' }}>Charge sensitivity (<MathText math="\\mathrm{kHz}" />) · lower is better</div>
+        <div style={{ textAlign: 'center' }}>Charge sensitivity (<MathText math="\mathrm{kHz}" />) · lower is better</div>
       </foreignObject>
       <foreignObject x="-55" y="64" width="140" height="18" className="tradeoff-axis-label" transform="rotate(-90 15 73)">
-        <div style={{ textAlign: 'center' }}>Level separation (<MathText math="\\mathrm{MHz}" />)</div>
+        <div style={{ textAlign: 'center' }}>Level separation (<MathText math="\mathrm{MHz}" />)</div>
       </foreignObject>
-      {feasible.map((candidate) => {
-        const isSelected = Math.abs(candidate.ratio - selectedRatio) < 1e-9;
+      {candidates.map((candidate) => {
+        const isSelected = selectedRatio !== null && Math.abs(candidate.ratio - selectedRatio) < 1e-9;
+        const explanation = candidate.feasible ? 'passes all goals' : candidate.violations.map(violationLabel).join(', ');
         return (
           <circle
             key={candidate.ratio}
-            className={`tradeoff-point${isSelected ? ' selected' : ''}`}
+            className={`tradeoff-point ${candidate.feasible ? 'passing' : 'failing'}${isSelected ? ' selected' : ''}`}
             cx={x(candidate.dispersion_upper_khz)}
             cy={y(candidate.anharmonicity_mhz)}
             r={isSelected ? 5 : 3.2}
-            role="button"
-            tabIndex={0}
-            aria-label={`Choose design with ${num(candidate.anharmonicity_mhz, 1)} MHz level separation and ${num(candidate.dispersion_upper_khz, 3)} kHz charge sensitivity`}
-            onClick={() => onSelect(candidate)}
+            role={candidate.feasible ? 'button' : undefined}
+            tabIndex={candidate.feasible ? 0 : undefined}
+            aria-label={`${candidate.feasible ? 'Choose' : 'Unavailable'} design with ${num(candidate.anharmonicity_mhz, 1)} MHz level separation and ${num(candidate.dispersion_upper_khz, 3)} kHz charge sensitivity; ${explanation}`}
+            onClick={() => { if (candidate.feasible) onSelect(candidate); }}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') onSelect(candidate);
+              if (candidate.feasible && (event.key === 'Enter' || event.key === ' ')) onSelect(candidate);
             }}
           >
-            <title>{`E_J/E_C ${num(candidate.ratio, 1)} · |α| ${num(candidate.anharmonicity_mhz, 1)} MHz · charge ${num(candidate.dispersion_upper_khz, 3)} kHz`}</title>
+            <title>{`E_J/E_C ${num(candidate.ratio, 1)} · |α| ${num(candidate.anharmonicity_mhz, 1)} MHz · charge ${num(candidate.dispersion_upper_khz, 3)} kHz · ${explanation}`}</title>
           </circle>
         );
       })}
@@ -112,26 +113,43 @@ function ChartGraphic({ feasible, selected, onSelect, expanded = false }: ChartG
   );
 }
 
+function violationLabel(code: string): string {
+  if (code === 'charge_budget_khz') return 'charge sensitivity is too high';
+  if (code === 'anharmonicity_floor_mhz') return 'level separation is too low';
+  if (code.includes('ej_')) return 'junction energy is outside the supported range';
+  if (code.includes('ec_')) return 'charging energy is outside the supported range';
+  return 'does not meet a design rule';
+}
+
 export default function TradeoffChart({ candidates, selected, onSelect }: TradeoffChartProps) {
   const [expanded, setExpanded] = useState(false);
   const feasible = candidates.filter((candidate) => candidate.feasible);
-  if (feasible.length === 0) return null;
+  if (candidates.length === 0) return null;
 
   return (
     <>
       <div className="tradeoff-chart">
         <div className="tradeoff-chart-head">
           <div>
-            <strong>Explore passing designs</strong>
-            <p>Higher is easier to control. Farther left is less affected by charge.</p>
+            <strong>Trade-off between passing designs</strong>
+            <p>Higher gives more level separation. Farther left means less charge sensitivity.</p>
           </div>
           <div className="tradeoff-chart-tools">
-            <span>{feasible.length} pass</span>
-            <button type="button" onClick={() => setExpanded(true)}>Open large graph</button>
+            <span><MathText math={`${feasible.length}/${candidates.length}`} /> pass</span>
+            <button type="button" onClick={() => setExpanded(true)}>Expand graph</button>
           </div>
         </div>
-        <ChartGraphic feasible={feasible} selected={selected} onSelect={onSelect} />
-        <p className="tradeoff-chart-help">Select any dot to inspect that passing design. Apply is a separate action.</p>
+        {feasible.length > 0
+          ? <ChartGraphic candidates={feasible} selected={selected} onSelect={onSelect} />
+          : <p className="tradeoff-chart-empty">No designs pass all three goals yet.</p>}
+        {feasible.length > 0 && <div className="tradeoff-legend"><span><i className="selected-dot"/>Selected</span><span><i className="passing-dot"/>Other passing designs</span></div>}
+        {selected && <div className="tradeoff-selected-readout" aria-live="polite">
+          <strong>Selected values</strong>
+          <span><MathText math={`E_J/E_C=${num(selected.ratio, 1)}`} /></span>
+          <span>Level separation: <MathText math={`${num(selected.anharmonicity_mhz, 1)}\\,\\mathrm{MHz}`} /></span>
+          <span>Charge sensitivity: <MathText math={`${num(selected.dispersion_upper_khz, 3)}\\,\\mathrm{kHz}`} /></span>
+        </div>}
+        <p className="tradeoff-chart-help">Every dot shown here passes all three goals.</p>
       </div>
 
       <Dialog open={expanded} onOpenChange={setExpanded}>
@@ -139,20 +157,22 @@ export default function TradeoffChart({ candidates, selected, onSelect }: Tradeo
           <DialogHeader>
             <DialogTitle>Compare passing designs</DialogTitle>
             <DialogDescription>
-              Select a dot to inspect a candidate. The highlighted dot is currently selected.
+              Select a dot to apply that design and see its exact values.
             </DialogDescription>
           </DialogHeader>
           <div className="tradeoff-chart tradeoff-chart-expanded">
-            <div className="tradeoff-expanded-summary">
+            {selected ? <div className="tradeoff-expanded-summary">
               <span><small>Selected level separation</small><strong><MathText math={`${num(selected.anharmonicity_mhz, 1)}\\,\\mathrm{MHz}`} /></strong></span>
               <span><small>Selected charge sensitivity</small><strong><MathText math={`${num(selected.dispersion_upper_khz, 3)}\\,\\mathrm{kHz}`} /></strong></span>
               <span><small>Selected <MathText math="E_J/E_C" /></small><strong><MathText math={num(selected.ratio, 1)} /></strong></span>
-            </div>
-            <ChartGraphic feasible={feasible} selected={selected} onSelect={onSelect} expanded />
-            <div className="tradeoff-legend">
+            </div> : <p>No option passes all three goals yet. The gray dots below show what was evaluated.</p>}
+            {feasible.length > 0
+              ? <ChartGraphic candidates={feasible} selected={selected} onSelect={onSelect} expanded />
+              : <p className="tradeoff-chart-empty">No designs pass all three goals yet.</p>}
+            {feasible.length > 0 && <div className="tradeoff-legend">
               <span><i className="selected-dot" />Selected design</span>
-              <span><i />Other passing designs</span>
-            </div>
+              <span><i className="passing-dot" />Other passing designs</span>
+            </div>}
           </div>
         </DialogContent>
       </Dialog>

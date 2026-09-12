@@ -6,6 +6,7 @@ import DriveCartoon from '@/components/DriveCartoon';
 import MathText from '@/components/MathText';
 import { DASH, delta, dispersionDisplay, num, paramSummary, signed } from '@/lib/format';
 import { approxDeltaMhz, transmonApproxF01Ghz } from '@/lib/transmon-approx';
+import { mathValue } from '@/lib/math-format';
 import type { TopicId } from '@/lib/explain-topics';
 import type { ChargePoint, DesignGoals, DeviceResult } from '@/lib/types';
 import { validExperimentGoals } from '@/lib/experiment-session';
@@ -50,8 +51,8 @@ function Metric({ topicId, selected, label, symbol, value, muted, note, deltaTex
       <div className="k">
         <MathText text={label} /> {symbol && <span className="sym"><MathText text={symbol} /></span>}
       </div>
-      <div className={`v${muted ? ' none' : ''}`}>{value}</div>
-      {deltaText && <div className={`d ${deltaText.tone}`}>{deltaText.text}</div>}
+      <div className={`v${muted ? ' none' : ''}`}><MathText text={value} /></div>
+      {deltaText && <div className={`d ${deltaText.tone}`}><MathText text={deltaText.text} /></div>}
       {note && <div className="note"><MathText text={note} /></div>}
     </button>
   );
@@ -82,24 +83,16 @@ function EnergyLevels({ result, baseline }: { result: DeviceResult; baseline: De
       {levels.map((value, index) => (
         <g key={index}>
           <line x1="40" x2={LEVEL_W - 60} y1={y(value)} y2={y(value)} stroke="#1b2027" strokeWidth="2" />
-          <text x="32" y={y(value) + 4} fontSize="11" textAnchor="end" fill="#5c6672" fontFamily="ui-monospace, Menlo, monospace">
-            |{index}⟩
-          </text>
-          <text x={LEVEL_W - 54} y={y(value) + 4} fontSize="10" fill="#878f9b" fontFamily="ui-monospace, Menlo, monospace">
-            {num(value, 3)}
-          </text>
+          <foreignObject x="0" y={y(value) - 9} width="35" height="18"><div className="svg-math-label right"><MathText math={`|${index}\\rangle`} /></div></foreignObject>
+          <foreignObject x={LEVEL_W - 55} y={y(value) - 9} width="55" height="18"><div className="svg-math-label"><MathText math={num(value, 3)} /></div></foreignObject>
         </g>
       ))}
       {levels.length > 2 && (
         <>
           <line x1="62" x2="62" y1={y(levels[0])} y2={y(levels[1])} stroke="#1a6fe0" strokeWidth="1.4" />
-          <text x="68" y={(y(levels[0]) + y(levels[1])) / 2 + 3} fontSize="10" fill="#1a6fe0">
-            f₀₁ {num(result.f01_ghz, 3)} GHz
-          </text>
+          <foreignObject x="68" y={(y(levels[0]) + y(levels[1])) / 2 - 9} width="150" height="20"><div className="svg-math-label blue"><MathText math={`f_{01}=${mathValue(result.f01_ghz, 3, 'GHz')}`} /></div></foreignObject>
           <line x1="62" x2="62" y1={y(levels[1])} y2={y(levels[2])} stroke="#5c6672" strokeWidth="1.4" />
-          <text x="68" y={(y(levels[1]) + y(levels[2])) / 2 + 3} fontSize="10" fill="#5c6672">
-            f₁₂ {num(result.f12_ghz, 3)} GHz
-          </text>
+          <foreignObject x="68" y={(y(levels[1]) + y(levels[2])) / 2 - 9} width="150" height="20"><div className="svg-math-label"><MathText math={`f_{12}=${mathValue(result.f12_ghz, 3, 'GHz')}`} /></div></foreignObject>
         </>
       )}
     </svg>

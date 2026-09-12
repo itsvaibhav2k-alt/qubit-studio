@@ -97,7 +97,7 @@ export default function ParamField({ paramKey, value, onChange, disabled = false
             }
           }}
         />
-        <span className="unit">{spec.unit}</span>
+        <span className="unit">{spec.unit && <MathText math={spec.unit === 'GHz' ? '\\mathrm{GHz}' : '2e'} />}</span>
       </div>
       {invalid && <p className="field-msg" id={`p-${paramKey}-error`} role="status">{invalid}</p>}
     </div>

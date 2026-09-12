@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SavedDesigns from '@/components/SavedDesigns';
+import ChipBuilder from '@/components/ChipBuilder';
 import type { ShareableDesign } from '@/lib/design-link';
 import AskLlm from '@/components/AskLlm';
 import LayoutWorkbench from '@/components/layout/LayoutWorkbench';
@@ -194,6 +195,7 @@ export default function Page() {
   return (
     <>
       <LayoutWorkbench
+        builderTool={<ChipBuilder result={canPin ? result : null} onApplyElectrical={(ejGhz, ecGhz) => applyMaterialScenario({ ...params, ej_ghz: clampParam('ej_ghz', ejGhz), ec_ghz: clampParam('ec_ghz', ecGhz) })}/>}
         designTools={<SavedDesigns design={{ params, goals, topMaterial: materials.topMaterial, baseMaterial: materials.baseMaterial }} onRestore={restoreDesign} />}
         mode={mode} onMode={setMode} status={statusBadge}
         hiddenParts={hiddenParts} onToggleVisible={toggleVisible}

@@ -295,6 +295,15 @@ export default function Viewport3D({
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const fitRef = useRef<((resetPose: boolean) => void) | null>(null);
+  const [renderState, setRenderState] = useState<'loading' | 'ready' | 'failed'>(() => {
+    if (typeof document === 'undefined') return 'loading';
+    try {
+      const probe = document.createElement('canvas');
+      return probe.getContext('webgl2') || probe.getContext('webgl') ? 'loading' : 'failed';
+    } catch {
+      return 'failed';
+    }
+  });
 
   useImperativeHandle(handleRef, () => ({
     resetView: () => fitRef.current?.(true),
@@ -310,12 +319,22 @@ export default function Viewport3D({
 
   return (
     <div ref={wrapperRef} className="hardware-canvas" data-selected={selected??''} data-explode={explode}>
-    <Canvas
+    {renderState !== 'ready' && <div className={`hardware-canvas-message ${renderState}`} role="status">
+      <div className="hardware-fallback-chip" aria-hidden="true"><span/><span/><i/></div>
+      <strong>{renderState === 'failed' ? '3D is unavailable in this browser' : 'Loading the 3D chip…'}</strong>
+      <span>{renderState === 'failed' ? 'Enable hardware acceleration or try another browser. The layout and simulation still work.' : 'Preparing the interactive model.'}</span>
+    </div>}
+    {renderState !== 'failed' && <Canvas
+      fallback={<div className="hardware-canvas-message failed"><strong>3D is unavailable in this browser</strong><span>The layout and simulation still work.</span></div>}
       camera={{ position: DEFAULT_DIRECTION.clone().multiplyScalar(5).toArray(), fov: 30, near: 0.1, far: 60 }}
       dpr={[1, 2]}
       frameloop={active ? 'always' : 'never'}
       shadows={{ type: PCFShadowMap }}
       onPointerMissed={onClearSelection}
+      onCreated={({ gl }) => {
+        setRenderState('ready');
+        gl.domElement.addEventListener('webglcontextlost', () => setRenderState('failed'), { once: true });
+      }}
       gl={{ antialias: true, toneMapping: ACESFilmicToneMapping, toneMappingExposure: 1.05 }}
       style={{ position: 'absolute', inset: 0 }}
     >
@@ -331,7 +350,7 @@ export default function Viewport3D({
         anchorRef={anchorRef}
         wrapperRef={wrapperRef}
       />
-    </Canvas>
+    </Canvas>}
     </div>
   );
 }

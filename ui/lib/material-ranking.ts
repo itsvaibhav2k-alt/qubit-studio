@@ -60,3 +60,17 @@ export function rankMaterialStacks(
 
   return [...candidates].sort((a, b) => score(a) - score(b));
 }
+
+/** Show one clear option per material/substrate pair, backed by its highest-ranked study. */
+export function rankDistinctMaterialPairs(
+  performancePriority: number,
+  substrate: SubstratePreference,
+): ResonatorMaterialRecord[] {
+  const seen = new Set<string>();
+  return rankMaterialStacks(performancePriority, substrate).filter((record) => {
+    const pair = `${record.material}\u0000${record.substrate}`;
+    if (seen.has(pair)) return false;
+    seen.add(pair);
+    return true;
+  });
+}

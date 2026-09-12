@@ -27,16 +27,39 @@ const UNICODE_TO_TEX: Array<[RegExp, string]> = [
   [/√\(8 E_J E_C\) − E_C/g, '$\\sqrt{8 E_J E_C}-E_C$'],
 ];
 
+const VALUE_WITH_UNIT = /([<>≤±~]?\s*[+-]?\d+(?:\.\d+)?(?:e[+-]?\d+)?(?:\s*[–-]\s*[+-]?\d+(?:\.\d+)?(?:e[+-]?\d+)?)?)\s*(fF\/µm²|A\/cm²|GHz|MHz|kHz|nA|fF|µs|µm²|µm|°C|%)/gi;
+
+function valueWithUnitToTex(value: string, unit: string): string {
+  const number = value.trim()
+    .replace(/^±/, '\\pm ')
+    .replace(/^≤/, '\\le ')
+    .replace(/^</, '\\lt ')
+    .replace(/^>/, '\\gt ')
+    .replace(/^~/, '\\sim ')
+    .replace(/(-?\d+(?:\.\d+)?)e([+-]?\d+)/gi, '$1\\times 10^{$2}')
+    .replace(/[–-](?=[+-]?\d)/g, '\\text{–}');
+  const texUnit: Record<string, string> = {
+    'fF/µm²': '\\mathrm{fF}/\\mu\\mathrm{m}^{2}',
+    'A/cm²': '\\mathrm{A}/\\mathrm{cm}^{2}',
+    'µm²': '\\mu\\mathrm{m}^{2}',
+    'µs': '\\mu\\mathrm{s}',
+    'µm': '\\mu\\mathrm{m}',
+    '°C': '{}^\\circ\\mathrm{C}',
+    '%': '\\%',
+  };
+  return `$${number}\\,${texUnit[unit] ?? `\\mathrm{${unit}}`}$`;
+}
+
 function withTex(text: string): string {
-  if (text.includes('$') || text.includes('\\(')) return text;
   let next = text;
   for (const [pattern, tex] of UNICODE_TO_TEX) next = next.split(/(\$[^$\n]+\$)/g).map((part, index) => index % 2 ? part : part.replace(pattern, tex)).join('');
+  next = next.split(/(\$[^$\n]+\$)/g).map((part, index) => index % 2 ? part : part.replace(VALUE_WITH_UNIT, (_, value: string, unit: string) => valueWithUnitToTex(value, unit))).join('');
   return next;
 }
 
 function renderChunk(chunk: string, display: boolean): string {
   try {
-    return katex.renderToString(chunk, { displayMode: display, throwOnError: false, trust: false });
+    return katex.renderToString(chunk, { displayMode: display, throwOnError: false, trust: false, strict: false });
   } catch {
     return chunk.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
   }

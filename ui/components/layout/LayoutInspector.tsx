@@ -11,6 +11,8 @@ import { PARAMS } from '@/lib/params';
 import { PART_BY_ID } from '@/lib/parts';
 import { TOPICS, TOPIC_IDS } from '@/lib/explain-topics';
 import { num } from '@/lib/format';
+import MathText from '@/components/MathText';
+import { mathValue } from '@/lib/math-format';
 import type { DeviceParams } from '@/lib/types';
 
 type Props = ComponentProps<typeof Inspector> & {
@@ -45,17 +47,17 @@ export default function LayoutInspector(props: Props) {
       <h1>{text?.name ?? 'Explore the chip'}</h1>
       <p className="layout-component-role">{text?.role ?? 'Select a component in the layout or circuit to inspect its model parameter.'}</p>
       {readOnly && <p className="layout-readonly"><LockKeyhole size={15}/>{candidate ? `${candidateCurrent?'Candidate':'Outdated candidate'} values · read only` : 'Applied device · read only in Design'}</p>}
-      {part?.param && <div className="layout-primary-field"><ParamField key={`${part.param}-${readOnly?'design':'explore'}`} paramKey={part.param} value={inspectedParams[part.param]} onChange={onChange} disabled={readOnly} label={text?.label}/><div className="layout-field-bounds"><span>{PARAMS[part.param].min}</span><span>{PARAMS[part.param].max} {PARAMS[part.param].unit}</span></div></div>}
+      {part?.param && <div className="layout-primary-field"><ParamField key={`${part.param}-${readOnly?'design':'explore'}`} paramKey={part.param} value={inspectedParams[part.param]} onChange={onChange} disabled={readOnly} label={text?.label}/><div className="layout-field-bounds"><span><MathText math={`${PARAMS[part.param].min}`} /></span><span><MathText text={`${PARAMS[part.param].max} ${PARAMS[part.param].unit}`} /></span></div></div>}
       {selected && <button className="btn primary layout-inspect-action" onClick={onInspect}>{inspecting?<ArrowLeft size={18}/>:<ScanSearch size={18}/>} {inspecting?'Return to full chip':INSPECTIONS[selected].action}</button>}
       {!part?.modeled && part && <p className="layout-context-note">Context only · no editable model input.</p>}
       <div className="layout-editor-footer"><span><Info size={14}/> Effective model parameters</span><details className="tech"><summary>More detail</summary><div className="body">
         {part?.param && <p>{PARAMS[part.param].meaning}</p>}
         <p>Geometry is illustrative. Editing energy values does not resize the pads or calculate a new capacitance from their shape.</p>
         {selected==='junction' && <p>The enlarged overlap identifies the weak link between the two electrodes. The junction detail is exaggerated for legibility.</p>}
-        <p>EJ/h {num(inspectedParams.ej_ghz,2)} GHz · EC/h {num(inspectedParams.ec_ghz,3)} GHz · ng {num(inspectedParams.ng,3)}</p>
-        <details className="tech"><summary>Materials & sensitivity</summary><MaterialSensitivity onAsk={props.onSelectTopic} session={props.session} params={params} result={result} onApply={props.onApplyMaterialScenario} onMaterialsChange={props.onMaterialsChange} topMaterial={props.materials.topMaterial} baseMaterial={props.materials.baseMaterial}/></details>
+        <p><MathText math={`E_J/h=${mathValue(inspectedParams.ej_ghz,2,'GHz')}; E_C/h=${mathValue(inspectedParams.ec_ghz,3,'GHz')}; n_g=${num(inspectedParams.ng,3)}`} /></p>
+        <details className="tech"><summary>Choose and compare materials</summary><MaterialSensitivity onAsk={props.onSelectTopic} session={props.session} params={params} result={result} onApply={props.onApplyMaterialScenario} onMaterialsChange={props.onMaterialsChange} topMaterial={props.materials.topMaterial} baseMaterial={props.materials.baseMaterial}/></details>
         <details className="tech"><summary>Explanation topics</summary><div className="row-actions">{TOPIC_IDS.map(id => <button type="button" className="btn" key={id} aria-pressed={props.selectedTopics.has(id)} onClick={() => props.onSelectTopic(id)}>{TOPICS[id].label}</button>)}</div></details>
-        <div className="row-actions"><button className="btn" disabled={props.selectedTopics.size===0} onClick={props.onAskLlm}>Ask AI about selection ({props.selectedTopics.size})</button><button className="btn" disabled={props.selectedTopics.size===0} onClick={props.onClearTopics}>Clear AI selection</button></div>
+        <div className="row-actions"><button className="btn" disabled={props.selectedTopics.size===0} onClick={props.onAskLlm}>Ask AI about selection (<MathText math={`${props.selectedTopics.size}`} />)</button><button className="btn" disabled={props.selectedTopics.size===0} onClick={props.onClearTopics}>Clear AI selection</button></div>
       </div></details></div>
     </section>
     {!readOnly && <GeometryEditor key={`${params.ej_ghz}-${params.ec_ghz}`} params={params} onApply={(ej_ghz, ec_ghz) => props.onApplyMaterialScenario({ ...params, ej_ghz, ec_ghz })} />}
@@ -64,7 +66,7 @@ export default function LayoutInspector(props: Props) {
     </details>
     {readOnly && <section className="layout-design-tools" aria-label="Existing Design workflow">
       {candidate && <p className="layout-candidate-scope">The inspector shows the {candidateCurrent?'current':'outdated'} {alternative?'selected alternative':'recommendation'}. The chip and results remain the applied device until you choose “Use variables + materials”.</p>}
-      <DesignLab session={props.session} params={params} goals={props.goals} onGoalsChange={props.onGoalsChange} onApply={props.onApplyMaterialScenario} onMaterialsChange={props.onMaterialsChange} currentMaterials={props.materials}/>
+      <DesignLab session={props.session} params={params} result={result} goals={props.goals} onGoalsChange={props.onGoalsChange} onApply={props.onApplyMaterialScenario} onMaterialsChange={props.onMaterialsChange} currentMaterials={props.materials}/>
     </section>}
   </div>;
 }

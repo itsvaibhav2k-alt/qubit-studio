@@ -2,9 +2,9 @@
 
 import MathText from '@/components/MathText';
 import type { TopicId } from '@/lib/explain-topics';
-import { num, signed } from '@/lib/format';
 import { BCQT_SOURCE, MATERIAL_CATALOG, MATERIAL_RECORDS } from '@/lib/material-records';
 import { materialColor } from '@/lib/material-colors';
+import { mathRange, mathValue, scientific, signedMathValue } from '@/lib/math-format';
 import type { ExperimentSession } from '@/lib/experiment-session';
 import { validDeviceResult } from '@/lib/device-snapshot';
 import { sameParams } from '@/lib/params';
@@ -19,6 +19,23 @@ interface MaterialSensitivityProps {
   topMaterial: string;
   baseMaterial: string;
   onAsk?: (id: TopicId) => void;
+}
+
+function plainProcess(deposition: string, treatment: string): string {
+  const method = deposition.toLowerCase();
+  const steps = treatment.toLowerCase();
+  const notes: string[] = [];
+  if (method.includes('mbe')) notes.push('The film was grown slowly in a carefully controlled chamber.');
+  else if (method.includes('evaporation')) notes.push('The material was heated so a thin coating formed on the chip.');
+  else if (method.includes('sputter') || method.includes('pvd')) notes.push('A thin coating was added inside a vacuum chamber.');
+  else if (method.includes('pulsed-laser')) notes.push('Laser pulses were used to add a thin coating.');
+  else if (method.includes('oxidation')) notes.push('Oxygen and heat were used to form the layer.');
+  else notes.push('The source does not clearly explain how the layer was added.');
+  if (steps.includes('no surface')) notes.push('The surface was not specially cleaned first.');
+  else if (steps.includes('rca') || steps.includes('hf')) notes.push('The surface was carefully cleaned before coating.');
+  if (steps.includes('anneal')) notes.push('The chip was heated afterward to improve the film.');
+  if (steps.includes('rie') || steps.includes('etch')) notes.push('Unused material was removed to make the pattern.');
+  return notes.join(' ');
 }
 
 export default function MaterialSensitivity({ session, params, result, onApply, onMaterialsChange, topMaterial, baseMaterial, onAsk }: MaterialSensitivityProps) {
@@ -54,78 +71,53 @@ export default function MaterialSensitivity({ session, params, result, onApply, 
 
   return (
     <div className="insp-section material-sensitivity">
-      <button type="button" className="insp-title myla-hit" onClick={() => onAsk?.('materials')}>
-        Material sandbox
-      </button>
-      <p className="insp-role">
-        Combine any two real materials from the verified catalog—even the same material twice.
-      </p>
+      <div className="insp-title">Choose materials</div>
+      <p className="insp-role">Pick what the circuit is made from and what sits underneath it.</p>
 
       <div className="sandbox-pickers">
         <label className="material-picker" data-tour="top-mat">
-          <span>Top material</span>
+          <span>Circuit material</span>
           <select value={topMaterial} onChange={(event) => changeMaterial('top', event.target.value)}>
             {MATERIAL_CATALOG.map((material) => <option key={material} value={material}>{material}</option>)}
           </select>
         </label>
         <label className="material-picker" data-tour="base-mat">
-          <span>Base material</span>
+          <span>Supporting material</span>
           <select value={baseMaterial} onChange={(event) => changeMaterial('base', event.target.value)}>
             {MATERIAL_CATALOG.map((material) => <option key={material} value={material}>{material}</option>)}
           </select>
         </label>
       </div>
 
-      <div className="row-actions">
-        <span className="pill material-pill">
-          <i style={{ background: materialColor(topMaterial) }} /> {topMaterial}
-          <i style={{ background: materialColor(baseMaterial) }} /> {baseMaterial}
-        </span>
+      <div className="material-selection-summary" aria-label={`Selected materials: ${topMaterial} and ${baseMaterial}`}>
+        <span><i style={{ background: materialColor(topMaterial) }} /><small>Circuit</small><strong>{topMaterial}</strong></span>
+        <span><i style={{ background: materialColor(baseMaterial) }} /><small>Support</small><strong>{baseMaterial}</strong></span>
       </div>
 
-      <p className="visual-note">The 3D chip updates immediately using representative room-light colors: metal films are silver/gray except gold-toned TiN, and the base reflects the substrate. Color is visual only.</p>
+      <p className="visual-note">The chip color updates immediately. Colors are only a visual guide.</p>
 
       <div className="material-record">
         {matchingRecord?.kind === 'resonator-loss' ? (
           <>
-            <dl className="kv">
-              <dt>Evidence</dt><dd>Matching published resonator record</dd>
-              <dt>Category</dt><dd>{matchingRecord.category}</dd>
-              <dt>Process</dt><dd>{matchingRecord.deposition}; {matchingRecord.treatment}</dd>
-              <dt>Geometry</dt><dd>{matchingRecord.geometry}</dd>
-              <dt>Measured δLP</dt>
-              <dd>
-                {matchingRecord.lowPowerLossMin === matchingRecord.lowPowerLossMax
-                  ? matchingRecord.lowPowerLossMin.toExponential(1)
-                  : `${matchingRecord.lowPowerLossMin.toExponential(1)}–${matchingRecord.lowPowerLossMax.toExponential(1)}`}
-              </dd>
-              {decayLow !== null && decayHigh !== null && (
-                <><dt>Decay scale</dt><dd>~{num(decayLow, 1)}{decayLow !== decayHigh ? `–${num(decayHigh, 1)}` : ''} µs*</dd></>
-              )}
-            </dl>
-            <p className="scenario-scope">
-              *Equivalent resonator scale, not predicted qubit T1.{' '}
-              <a href={BCQT_SOURCE} target="_blank" rel="noreferrer">Source data</a>.
-            </p>
+            <div className="material-evidence-heading"><span>✓</span><div><strong>Published data found</strong><small>This exact material pair was tested in a resonator.</small></div></div>
+            <dl className="kv material-simple-facts"><dt>Signal loss</dt><dd>{matchingRecord.lowPowerLossMin === matchingRecord.lowPowerLossMax ? <MathText math={scientific(matchingRecord.lowPowerLossMin)} /> : <MathText math={`${scientific(matchingRecord.lowPowerLossMin)}-${scientific(matchingRecord.lowPowerLossMax)}`} />}<small>Smaller is better.</small></dd>{decayLow !== null && decayHigh !== null && <><dt>Comparison time</dt><dd><MathText math={decayLow !== decayHigh ? `\\sim ${mathRange(decayLow, decayHigh, 1, 'us')}` : `\\sim ${mathValue(decayLow, 1, 'us')}`} /><small>Useful for comparing choices, not a promised lifetime.</small></dd></>}</dl>
+            <details className="tech material-study-details"><summary>How this pair was tested</summary><div className="body"><p>{plainProcess(matchingRecord.deposition, matchingRecord.treatment)}</p><p>The study used a {matchingRecord.geometry}.</p><a href={BCQT_SOURCE} target="_blank" rel="noreferrer">View the source data ↗</a></div></details>
           </>
         ) : isMajoranaPair && majoranaRecord?.kind === 'device-stack' ? (
           <>
-            <dl className="kv">
-              <dt>Evidence</dt><dd>Part of a reported topological-device stack</dd>
-              <dt>Full stack</dt><dd>{majoranaRecord.layers.join(' · ')}</dd>
-            </dl>
-            <p className="scenario-scope">
-              No <MathText math="E_J/E_C" /> or comparable resonator-loss record is provided.{' '}
-              <a href={majoranaRecord.sourceUrl} target="_blank" rel="noreferrer">Source data</a>.
-            </p>
+            <div className="material-evidence-heading neutral"><span>i</span><div><strong>Different kind of device</strong><small>This pair appears in a published quantum device, but not in a matching transmon test.</small></div></div>
+            <details className="tech material-study-details"><summary>See the published device</summary><div className="body"><p>Reported materials: {majoranaRecord.layers.join(' · ')}.</p><a href={majoranaRecord.sourceUrl} target="_blank" rel="noreferrer">View the source ↗</a></div></details>
           </>
         ) : (
-          <p className="scenario-scope">Both selections are real materials, but the imported dataset has no measurement for this exact pair. The combination is allowed; no loss or lifetime value is invented.</p>
+          <div className="material-evidence-heading neutral"><span>i</span><div><strong>No exact test found</strong><small>You can still use this pair for the visual design, but the app will not guess its performance.</small></div></div>
         )}
       </div>
 
+      <details className="tech material-effects">
+        <summary>Optional: test possible electrical changes</summary>
+        <div className="body"><p>Use these only for “what if?” experiments. They do not predict what the selected materials will do.</p>
       <label className="scenario-field" data-tour="junction-fx">
-        <span>Junction effect <strong>{signed((junctionFactor - 1) * 100, 0)}%</strong></span>
+        <span>Change in junction energy <strong><MathText math={signedMathValue((junctionFactor - 1) * 100, 0, 'percent')} /></strong></span>
         <input
           type="range"
           min={0.5}
@@ -139,7 +131,7 @@ export default function MaterialSensitivity({ session, params, result, onApply, 
       </label>
 
       <label className="scenario-field" data-tour="cap-fx">
-        <span>Total capacitance <strong>{signed((capacitanceFactor - 1) * 100, 0)}%</strong></span>
+        <span>Change in capacitance <strong><MathText math={signedMathValue((capacitanceFactor - 1) * 100, 0, 'percent')} /></strong></span>
         <input
           type="range"
           min={0.5}
@@ -154,21 +146,15 @@ export default function MaterialSensitivity({ session, params, result, onApply, 
 
       <div className="row-actions">
         <button type="button" className="btn primary" aria-label="Compare scenario" aria-busy={loading} onClick={compare} disabled={loading || !!session.validationError('material')}>
-          <span role="status">{loading ? 'Calculating…' : 'Compare scenario'}</span>
+          <span role="status">{loading ? 'Calculating…' : 'Run what-if test'}</span>
         </button>
         <button type="button" className="btn" onClick={() => {
           session.setControls({ junctionFactor: 1, capacitanceFactor: 1 });
         }}>
-          Clear effects
+          Reset changes
         </button>
       </div>
 
-      {isMajoranaPair && (
-        <p className="illus">
-          The selected materials resemble part of Majorana 2, but the result below remains an isolated-transmon
-          sensitivity calculation—not a topological-qubit simulation.
-        </p>
-      )}
       {(error || session.validationError('material')) && <p className="scenario-error" role="status">{error || session.validationError('material')}</p>}
 
       {comparison && (
@@ -176,17 +162,20 @@ export default function MaterialSensitivity({ session, params, result, onApply, 
           {!session.material.current && <p className="scenario-error" role="status">Outdated result — rerun this scenario.</p>}
           <dl className="kv">
             <dt>Scenario</dt><dd>{comparison.scenario_name}</dd>
-            <dt>Frequency</dt><dd>{num(comparison.baseline.f01_ghz, 3)} → {num(comparison.modified.f01_ghz, 3)} GHz</dd>
-            <dt>Change</dt><dd>{signed(comparison.deltas.f01_ghz, 3)} GHz</dd>
-            <dt>Anharmonicity</dt><dd>{num(comparison.baseline.anharmonicity_mhz, 1)} → {num(comparison.modified.anharmonicity_mhz, 1)} MHz</dd>
-            <dt>Dispersion bound</dt><dd>{num(comparison.baseline.dispersion_upper_khz, 3)} → {num(comparison.modified.dispersion_upper_khz, 3)} kHz</dd>
+            <dt>Frequency</dt><dd><MathText math={`${mathValue(comparison.baseline.f01_ghz, 3, 'GHz')}\\to ${mathValue(comparison.modified.f01_ghz, 3, 'GHz')}`} /></dd>
+            <dt>Change</dt><dd><MathText math={signedMathValue(comparison.deltas.f01_ghz, 3, 'GHz')} /></dd>
+            <dt>Anharmonicity</dt><dd><MathText math={`${mathValue(comparison.baseline.anharmonicity_mhz, 1, 'MHz')}\\to ${mathValue(comparison.modified.anharmonicity_mhz, 1, 'MHz')}`} /></dd>
+            <dt>Dispersion bound</dt><dd><MathText math={`${mathValue(comparison.baseline.dispersion_upper_khz, 3, 'kHz')}\\to ${mathValue(comparison.modified.dispersion_upper_khz, 3, 'kHz')}`} /></dd>
           </dl>
           <button type="button" className="btn" disabled={!session.getApply('material')} onClick={() => { const applied = session.getApply('material'); if (applied) onApply(applied); }}>
-            Apply evaluated scenario
+            Use these test values
           </button>
           <p className="scenario-scope">{comparison.scope}.</p>
         </div>
       )}
+        </div>
+      </details>
+      {onAsk && <button type="button" className="btn material-explain-button" onClick={() => onAsk('materials')}>Explain these materials with AI</button>}
     </div>
   );
 }

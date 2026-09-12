@@ -21,7 +21,7 @@ interface Props {
   status:{className:string;text:string}; hiddenParts:PartId[]; onToggleVisible:(id:PartId)=>void;
   explode:number; onExplode:(value:number)=>void; onReset3d:()=>void;
   onExport:()=>void; canExport:boolean; onPreset:(name:string)=>void; onResetParams:()=>void; atDefaults:boolean;
-  children:ReactNode; designTools?:ReactNode;
+  children:ReactNode; builderTool?:ReactNode; designTools?:ReactNode;
 }
 export default function LayoutWorkbench(props:Props) {
   const [tour,setTour]=useState<number|null>(null);
@@ -75,6 +75,7 @@ export default function LayoutWorkbench(props:Props) {
       <details className="layout-popover components-menu"><summary><Box size={16}/>Components <ChevronDown size={14}/></summary><div aria-label="Component selection">{[...PARTS.filter(p=>p.modeled),...PARTS.filter(p=>!p.modeled)].map(part=><button key={part.id} onClick={event=>{onSelect(part.id);event.currentTarget.closest('details')?.removeAttribute('open');}} aria-pressed={selected===part.id}>{part.name}</button>)}</div></details>
       <div className="wave-view-switch" role="group" aria-label="Representation">{(['3d','layout'] as const).map(item=><button key={item} aria-pressed={!split&&view===item} onClick={()=>selectView(item)}>{item==='3d'?'3D':'Layout'}</button>)}</div>
       <button className="wave-tool-button split-toggle" aria-pressed={split} onClick={()=>setSplit(!split)}><Columns2 size={17}/>Split view</button>
+      {props.builderTool}
       <span className="spacer"/>
       <button className="wave-tool-button" aria-expanded={circuit} aria-controls="wave-circuit" onClick={()=>setCircuit(!circuit)}><CircuitBoard size={17}/>{circuit?'Hide circuit':'Show circuit'}</button>
       <details className="layout-popover view-options"><summary><SlidersHorizontal size={17}/>View options <ChevronDown size={14}/></summary><div><strong>{split?'3D + Layout':showLayout?'Layout':'3D'}</strong>

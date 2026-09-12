@@ -151,6 +151,7 @@ export default function Inspector({
       {tab === 'experiment' && <DesignLab
           session={session}
           params={params}
+          result={result}
           goals={goals}
           onGoalsChange={onGoalsChange}
           onApply={onApplyMaterialScenario}
