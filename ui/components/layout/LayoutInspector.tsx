@@ -40,6 +40,11 @@ export default function LayoutInspector(props: Props) {
   const alternative = candidate && recommended && (candidate.ej_ghz !== recommended.ej_ghz || candidate.ec_ghz !== recommended.ec_ghz || candidate.ng !== recommended.ng);
   const inspectedParams = readOnly && candidate ? candidate : params;
   return <div className="layout-inspector">
+    <section className="layout-editor" aria-label="Myla explanations">
+      <h2>Understand with Myla</h2>
+      <p className="layout-component-role">Select a part, number or graph, then ask what it means.</p>
+      <button className="btn primary" onClick={props.onAskLlm}>Ask Myla{props.selectedTopics.size?` (${props.selectedTopics.size} selected)`:''}</button>
+    </section>
     <section className="layout-editor" aria-label="Selected component inspector">
       <div className="layout-component-id">{text?.id ?? 'SELECT A COMPONENT'}</div>
       <h1>{text?.name ?? 'Explore the chip'}</h1>

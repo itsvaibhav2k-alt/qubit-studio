@@ -72,7 +72,7 @@ export default function DesignExtensions({ session, params, goals, materials, on
       document.body.appendChild(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'PDF export failed.'); }
   };
-  return <details className="tech backend-design-tools" data-tour="design-extensions">
+  return <details className="tech backend-design-tools" data-tour="design-extensions" open>
     <summary>Quick starts, preview & design alternatives</summary>
     <div className="body">
       <div className="row-actions">{PRESETS.map(preset => <button type="button" className="btn" key={preset.label} onClick={() => {

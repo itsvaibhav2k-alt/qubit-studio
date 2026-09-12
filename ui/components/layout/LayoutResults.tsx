@@ -22,7 +22,7 @@ export default function LayoutResults(props: Props) {
       {baseline&&<button onClick={onClearBaseline}><X size={14}/>Clear baseline</button>}
       <button onClick={props.onSolver}><Settings2 size={14}/>Solver settings</button>
       <button onClick={props.onExport} disabled={!props.canExport}><Download size={14}/>Export report</button>
-      <button onClick={()=>setExpanded(!expanded)} aria-expanded={expanded} aria-controls="layout-expanded-results"><ChevronDown size={14}/>{expanded?'Collapse results':'Expand results'}</button>
+      <button onClick={()=>setExpanded(!expanded)} aria-expanded={expanded} aria-controls="layout-expanded-results"><ChevronDown size={14}/>{expanded?'Hide graphs & details':'Show graphs & details'}</button>
     </div>
     {(!canPin||error) && <div className={`layout-result-state${error?' is-error':''}`} role="status">{error?`Calculation failed. ${error}`:result?'Updating… Previous values are outdated.':'Calculating the first result…'}{error&&<button onClick={onRetry}>Retry calculation</button>}</div>}
     <div className="layout-result-metrics" data-current={canPin}>
@@ -33,6 +33,6 @@ export default function LayoutResults(props: Props) {
       </button>)}
     </div>
     <div className="layout-results-footnote"><span>{stale?'Previous calculation':'Calculated parameters'} · <MathText text={paramSummary(result)} /></span><span><MathText text={baseline?`Frozen baseline · ${paramSummary(baseline)}`:'Illustrative geometry · not fabrication-calibrated'} /></span></div>
-    {(expanded||props.tourExpanded)&&<section id="layout-expanded-results" className="layout-expanded-results" aria-label="Expanded results and energy levels"><ResultsDock {...props} goalHint="Open Design to find settings that meet your goals."/></section>}
+    {(expanded||props.tourExpanded)&&<section id="layout-expanded-results" className="layout-expanded-results" aria-label="Expanded results and energy levels"><ResultsDock {...props} chartsOpen goalHint="Open Design to find settings that meet your goals."/></section>}
   </div>;
 }

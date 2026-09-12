@@ -48,7 +48,7 @@ export default function AskLlm({ open, onOpenChange, topics, snapshot, explain }
           if (opener.current?.isConnected) { event.preventDefault(); opener.current.focus(); }
         }}>
         <DialogHeader>
-          <DialogTitle><span className="myla-head"><MylaIcon size={28} /><MathText text={headline} /></span></DialogTitle>
+          <DialogTitle><span className="myla-head"><MylaIcon size={28} />Myla · <MathText text={headline} /></span></DialogTitle>
           <DialogDescription>Ask Gemini about the completed calculation and selected evidence.</DialogDescription>
           <div className="text-sm text-muted-foreground mt-1">
             {topics.length > 0 ? (
@@ -71,7 +71,7 @@ export default function AskLlm({ open, onOpenChange, topics, snapshot, explain }
           </div>
         </DialogHeader>
 
-        {canAsk && topics.length > 0 && <details className="tech"><summary>Local teaching notes · no AI request</summary>
+        {canAsk && topics.length > 0 && <details className="tech" open><summary>Local teaching notes · no AI request</summary>
           {topics.map(topic => <article key={topic} className="ask-answer"><h4>{TOPICS[topic].label}</h4><MathText text={composeLocalMyla(topic, snapshot).body} /></article>)}
         </details>}
         {loading && <p className="ask-status" role="status">Asking Gemini to explain selected sections…</p>}

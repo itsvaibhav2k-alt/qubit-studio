@@ -132,7 +132,7 @@ export default function Page() {
   }, []);
 
   const triggerAskLlm = useCallback(() => {
-    if (selectedTopics.size === 0) return;
+    if (selectedTopics.size === 0) setSelectedTopics(new Set(['f01']));
     setLlmOpen(true);
   }, [selectedTopics.size]);
 

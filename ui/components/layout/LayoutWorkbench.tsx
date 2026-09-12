@@ -2,6 +2,7 @@
 import { useCallback, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { Blocks, Box, ChevronDown, CircuitBoard, Columns2, RotateCcw, SlidersHorizontal } from 'lucide-react';
 import GuidedTour from '@/components/GuidedTour';
+import MylaIcon from '@/components/MylaIcon';
 import { TOUR_STEPS } from '@/lib/guided-tour';
 import { PARTS, type PartId } from '@/lib/parts';
 import type Inspector from '@/components/Inspector';
@@ -69,6 +70,8 @@ export default function LayoutWorkbench(props:Props) {
       <nav className="wave-modes" aria-label="Workspace mode">{(['explore','design'] as const).map(item=><button key={item} aria-pressed={mode===item} onClick={()=>props.onMode(item)}>{item==='explore'?'Explore':'Design'}</button>)}</nav>
       <details className="layout-popover learning-menu"><summary>Design tools</summary><div>{props.designTools}<button type="button" onClick={()=>goTour(0)}>Guided learning</button></div></details>
       <span className="wave-device">Transmon / 01</span><span role="status" className={props.status.className}>{props.status.text}</span>
+      <button className="wave-tool-button" onClick={()=>goTour(0)}>Learn with Myla</button>
+      <button className="wave-tool-button" onClick={inspector.onAskLlm}><MylaIcon size={22}/>Ask Myla{inspector.selectedTopics.size>0?` (${inspector.selectedTopics.size})`:''}</button>
       <details className="layout-popover device-menu"><summary>Device <ChevronDown size={14}/></summary><div><label>Demo preset<select defaultValue="" disabled={mode==='design'} onChange={e=>{if(e.target.value)props.onPreset(e.target.value);e.target.value='';}}><option value="" disabled>Choose preset…</option><option value="default">Balanced default</option><option value="reference">scqubits reference</option><option value="protected">Low charge sensitivity</option><option value="anharmonic">High anharmonicity</option></select></label><button disabled={props.atDefaults||mode==='design'} onClick={props.onResetParams}>Reset all parameters</button></div></details>
     </header>
     <div className="wave-toolbar">

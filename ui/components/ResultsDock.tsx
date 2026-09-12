@@ -23,6 +23,7 @@ interface ResultsDockProps {
   selectedTopics: Set<TopicId>;
   onSelectTopic: (id: TopicId) => void;
   goalHint?: string;
+  chartsOpen?: boolean;
 }
 
 interface MetricProps {
@@ -172,8 +173,9 @@ export default function ResultsDock({
   selectedTopics,
   onSelectTopic,
   goalHint = 'Open “Try a goal” on the right and let the app find settings that pass.',
+  chartsOpen = false,
 }: ResultsDockProps) {
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(chartsOpen);
   const dispersion = dispersionDisplay(result);
   const approx = result ? transmonApproxF01Ghz(result.ej_ghz, result.ec_ghz) : null;
   const approxDelta = result && approx !== null ? approxDeltaMhz(result.f01_ghz, result.ej_ghz, result.ec_ghz) : null;
@@ -301,7 +303,7 @@ export default function ResultsDock({
           <button type="button" className="btn" onClick={onPin} disabled={!canPin}>Save baseline</button>
           <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>Clear baseline</button>
         </div>
-      <details className="results-technical" data-tour="tech-results" onToggle={event => setDetailsOpen(event.currentTarget.open)}>
+      <details className="results-technical" data-tour="tech-results" open={detailsOpen} onToggle={event => setDetailsOpen(event.currentTarget.open)}>
         <summary>Technical details and charts</summary>
         <div className="dock-grid technical-grid">
           <Metric topicId="ratio" selected={selectedTopics.has('ratio')} onSelectTopic={onSelectTopic} label="$E_J/E_C$ ratio" value={result ? num(result.ratio, 1) : DASH} muted={!result} deltaText={delta(result?.ratio, baseline?.ratio, 1, '')} />
