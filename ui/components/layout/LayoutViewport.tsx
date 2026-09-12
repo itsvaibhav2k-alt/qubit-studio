@@ -2,12 +2,15 @@
 
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { ArrowLeft, Hand, Maximize, Minus, MousePointer2, Plus } from 'lucide-react';
+import type { ComponentMaterials } from '@/lib/component-materials';
+import { placeInspectionLabels } from '@/lib/layout-labels';
 import type { PartId } from '@/lib/parts';
 import { boundedCamera, layoutViewBox, type LayoutCamera } from '@/lib/layout-geometry';
 import LayoutArtwork from './LayoutArtwork';
 import { INITIAL_LAYOUT_VIEW, INSPECTIONS, returnFromInspection, type LayoutViewState, type InspectionLabel, type PadFocus } from '@/lib/layout-inspection';
 
 interface Props {
+  componentMaterials: ComponentMaterials;
   selected: PartId | null;
   hiddenParts: PartId[];
   onSelect: (part: PartId) => void;
@@ -16,7 +19,7 @@ interface Props {
   viewState: LayoutViewState;
   onViewState: (next: LayoutViewState) => void;
 }
-export default function LayoutViewport({ selected, hiddenParts, onSelect, onInspect, annotations, viewState, onViewState }: Props) {
+export default function LayoutViewport({ componentMaterials, selected, hiddenParts, onSelect, onInspect, annotations, viewState, onViewState }: Props) {
   const surface = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 1000, height: 620 });
   const [pan, setPan] = useState(false);
@@ -66,11 +69,8 @@ export default function LayoutViewport({ selected, hiddenParts, onSelect, onInsp
     {text:'G1 · Charge gate',part:'gate',anchor:[840,310],offset:[20,-54]},
     {text:'Ground metal',part:'ground',anchor:[420,425],offset:[-135,20]},
   ];
-  const projected = labels.filter(l=>!l.part||!hiddenParts.includes(l.part)).map(label=>{
-    const ax=(label.anchor[0]-box.x)/box.width*size.width, ay=(label.anchor[1]-box.y)/box.height*size.height;
-    const width = Math.min(size.width-20, label.text.length*6.5+20);
-    return {...label, ax, ay, width, x:Math.max(10,Math.min(size.width-width-10,ax+label.offset[0])),y:Math.max(18,Math.min(size.height-40,ay+label.offset[1]))};
-  }).filter(label=>label.ax>=0&&label.ax<=size.width&&label.ay>=0&&label.ay<=size.height);
+  const projected = placeInspectionLabels(labels, box, size, selected, hiddenParts,
+    detail ? [{x:10,y:size.height-164,width:146,height:154}] : []);
   return <section className="layout-viewport" aria-label="Interactive chip layout" onKeyDown={event=>{if(event.key==='Escape'&&detail){event.preventDefault();onViewState(returnFromInspection(viewState));}}}>
     <div className="layout-canvas-toolbar">
       {detail ? <button className="layout-canvas-button" onClick={()=>onViewState(returnFromInspection(viewState))}><ArrowLeft size={16}/>Full chip</button> : <span className="layout-view-caption">TOP / TRANSMON 01</span>}
@@ -87,14 +87,14 @@ export default function LayoutViewport({ selected, hiddenParts, onSelect, onInsp
     {viewState.inspecting==='capacitor' && <div className="layout-pad-focus" role="group" aria-label="Capacitor inspection focus"><span>Inspect</span>{(['both','left','right'] as const).map(focus=><button key={focus} aria-pressed={viewState.padFocus===focus} onClick={()=>onInspect('capacitor',focus)}>{focus==='both'?'Both pads':focus==='left'?'Left pad':'Right pad'}</button>)}</div>}
     <div ref={surface} className={`layout-drawing${pan?' is-panning':''}`} onPointerDown={startPan} onPointerMove={movePan} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}} data-inspecting={detail}>
       <svg className="layout-scene" viewBox={`${box.x} ${box.y} ${box.width} ${box.height}`} aria-label="Transmon geometry with selectable capacitor pads, junction, gate, ground and substrate">
-        <LayoutArtwork selected={selected} hiddenParts={hiddenParts} onSelect={part=>{if(!pan&&!drag.current?.moved)onSelect(part);}} onInspect={part=>{if(!pan)onInspect(part);}} detail={detail}/>
+        <LayoutArtwork componentMaterials={componentMaterials} selected={selected} hiddenParts={hiddenParts} onSelect={part=>{if(!pan&&!drag.current?.moved)onSelect(part);}} onInspect={part=>{if(!pan)onInspect(part);}} detail={detail}/>
       </svg>
-      {annotations && size.width>510 && <div className="layout-annotations" aria-label="Component annotations">
+      {annotations && size.width>220 && <div className="layout-annotations" aria-label="Component annotations">
         <svg viewBox={`0 0 ${size.width} ${size.height}`} aria-hidden="true">{projected.map((l,i)=><g key={i}><path d={`M${l.ax} ${l.ay}L${l.x+12} ${l.y+13}`} stroke={l.part===selected?'#61beff':'#c4d2d9'} fill="none" strokeWidth="1"/><circle cx={l.ax} cy={l.ay} r="2.6" fill={l.part===selected?'#61beff':'#e5eaeb'}/></g>)}</svg>
-        {projected.map((l,i)=><button key={i} className={l.part===selected?'selected':''} style={{left:l.x,top:l.y,maxWidth:l.width}} onClick={()=>l.part&&onSelect(l.part)}>{l.text}</button>)}
+        {projected.map((l,i)=><button key={i} className={l.part===selected?'selected':''} style={{left:l.x,top:l.y,width:l.width,height:l.height}} onClick={()=>l.part&&onSelect(l.part)}>{l.text}</button>)}
       </div>}
       {detail && <button className="layout-locator" aria-label="Return to previous full-chip view" onClick={()=>onViewState(returnFromInspection(viewState))}>
-        <svg viewBox="0 0 1000 620" aria-hidden="true"><LayoutArtwork selected={selected} miniature/><rect x={box.x} y={box.y} width={box.width} height={box.height} fill="#2499ff22" stroke="#51baff" strokeWidth="8"/></svg><span>Full-chip locator</span>
+        <svg viewBox="220 30 560 560" aria-hidden="true"><LayoutArtwork componentMaterials={componentMaterials} selected={selected} hiddenParts={hiddenParts} miniature/><rect x={box.x} y={box.y} width={box.width} height={box.height} fill="#2499ff22" stroke="#51baff" strokeWidth="8"/></svg><span>Full-chip locator</span>
       </button>}
     </div>
     <div className="layout-canvas-status"><span>{inspection?inspection.explanation:'Illustrative geometry · Double-click a part to inspect · 100% fits the whole chip'}</span><span className="layout-layer-key"><i/>Metal <i/>Junction <i/>Substrate</span></div>

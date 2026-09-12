@@ -105,7 +105,7 @@ export default function LayoutWorkbench(props:Props) {
           <div className="hardware-status">Drag to orbit · scroll to zoom <span>Illustrative assembly</span></div>
         </section>
         {split&&<div className="product-divider" role="separator" tabIndex={0} aria-label="Resize 3D and Layout panes" aria-orientation="vertical" aria-valuemin={35} aria-valuemax={65} aria-valuenow={Math.round(ratio)} onDoubleClick={()=>setRatio(50)} onKeyDown={event=>{if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();setRatio(current=>Math.max(35,Math.min(65,current+(event.key==='ArrowLeft'?-5:5))));}}} onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);resize(event.clientX);}} onPointerMove={event=>{if(event.currentTarget.hasPointerCapture(event.pointerId))resize(event.clientX);}} onPointerUp={event=>event.currentTarget.releasePointerCapture(event.pointerId)}/>}
-        <section className="wave-renderer product-layout" hidden={!showLayout} aria-label="Planar layout pane"><LayoutViewport selected={selected} hiddenParts={props.hiddenParts} onSelect={onSelect} onInspect={openInspection} annotations={annotations} viewState={layoutView} onViewState={setLayoutView}/></section>
+        <section className="wave-renderer product-layout" hidden={!showLayout} aria-label="Planar layout pane"><LayoutViewport componentMaterials={props.componentMaterials} selected={selected} hiddenParts={props.hiddenParts} onSelect={onSelect} onInspect={openInspection} annotations={annotations} viewState={layoutView} onViewState={setLayoutView}/></section>
       </div>
       {circuit&&<div id="wave-circuit"><LayoutCircuit params={params} selected={selected} onSelect={onSelect}/></div>}
     </main>

@@ -1,30 +1,44 @@
 'use client';
 
 import { useId, type KeyboardEvent } from 'react';
-import { SUBSTRATE_PLAN, GATE_PLAN } from '@/lib/chip-plan';
+import { planContour, SUBSTRATE_PLAN, TOP_GROUND_PLAN, GATE_PLAN, LEFT_ELECTRODE, RIGHT_ELECTRODE } from '@/lib/chip-plan';
+import { CHIP, DIE_SCALE, PLATE } from '@/lib/chip-geometry';
+import { BOND_COUNT, BOND_FINISH, bondPoints, bondPosition, FILM_LAUNCHES, FILM_TRANSFORM, PERFORATIONS, PLAN_TRANSFORM, INSPECTION_SCALE, inspectionWorldPoint, JUNCTION_ELECTRODE, JUNCTION_OVERLAP } from '@/lib/chip-detail';
+import { DEFAULT_COMPONENT_MATERIALS, resolveMaterial, type ComponentMaterials } from '@/lib/component-materials';
 import type { PartId } from '@/lib/parts';
-import { GROUND_BOUNDARY, LEFT_ELECTRODE, METAL_OPENING, RIGHT_ELECTRODE } from '@/lib/layout-geometry';
 
 interface Props {
   selected: PartId | null;
   hiddenParts?: PartId[];
+  componentMaterials?: ComponentMaterials;
   onSelect?: (id: PartId) => void;
   onInspect?: (id: PartId) => void;
   detail?: boolean;
   miniature?: boolean;
 }
+const sides = [0, 1, 2, 3];
+const world = INSPECTION_SCALE;
+const aperture = PLATE.window / DIE_SCALE * world;
+const lipOuter = (PLATE.window + .085) / DIE_SCALE * world;
+const polygon = (points: number[][]) => points.map(p => p.join(',')).join(' ');
+const perforations: string[] = [];
+for (let y = PERFORATIONS.start; y < PERFORATIONS.end; y += PERFORATIONS.pitch)
+  for (let x = PERFORATIONS.start; x < PERFORATIONS.end; x += PERFORATIONS.pitch)
+    perforations.push(`M${x-1024} ${y-1024}h${PERFORATIONS.size}v${PERFORATIONS.size}h-${PERFORATIONS.size}Z`);
 
-/** Vector artwork, shared by overview, magnification and locator. No screenshot textures. */
-export default function LayoutArtwork({ selected, hiddenParts = [], onSelect, onInspect, detail, miniature }: Props) {
+/** The same die and nearby package aperture as Assembly, in an undistorted top projection. */
+export default function LayoutArtwork({ selected, hiddenParts = [], componentMaterials = DEFAULT_COMPONENT_MATERIALS, onSelect, onInspect, detail, miniature }: Props) {
   const prefix = useId().replaceAll(':', '');
   const id = (name: string) => `${prefix}-${name}`;
   const fill = (name: string) => `url(#${id(name)})`;
   const visible = (part: PartId) => !hiddenParts.includes(part);
+  const material = (part: PartId) => resolveMaterial(componentMaterials[part]);
+  // Package Au retains the separate neutral shield used in the main assembly.
+  const color = (part: PartId) => part === 'package' && material(part).id === 'Au' ? '#959993' : material(part).color;
   const pick = (part: PartId, label: string) => ({
     className: `layout-pick${selected === part ? ' is-selected' : ''}`,
-    'data-part': part,
-    'aria-label': label,
-    'aria-pressed': selected === part,
+    'data-part': part, 'data-material': material(part).id, 'data-finish': material(part).finish,
+    'aria-label': label, 'aria-pressed': selected === part,
     'aria-keyshortcuts': onInspect ? 'I' : undefined,
     onDoubleClick: onInspect ? () => onInspect(part) : undefined,
     role: onSelect ? 'button' : undefined,
@@ -35,58 +49,83 @@ export default function LayoutArtwork({ selected, hiddenParts = [], onSelect, on
       if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(part); }
     } : undefined,
   });
+  const finish = (part: PartId) => fill(material(part).finish);
+  const groundRegions = (props: React.SVGProps<SVGPathElement> = {}) => <g>
+    {[-1,1].map(sign=><path key={sign} d={planContour(TOP_GROUND_PLAN).map(([x,z],i)=>`${i?'L':'M'}${inspectionWorldPoint(x,sign*z).join(' ')}`).join('')+'Z'} {...props}/>)}
+  </g>;
   return <g className="layout-artwork">
     <defs>
-      <linearGradient id={id('gold')} x1="0" y1="0" x2="0.7" y2="1"><stop stopColor="#f7dca1"/><stop offset=".3" stopColor="#e8c385"/><stop offset=".65" stopColor="#d0a45e"/><stop offset="1" stopColor="#efd293"/></linearGradient>
-      <linearGradient id={id('silver')} x2="1" y2="1"><stop stopColor="#d1d7d7"/><stop offset=".45" stopColor="#aebbc2"/><stop offset="1" stopColor="#ccd2d2"/></linearGradient>
-      <linearGradient id={id('navy')} x2=".7" y2="1"><stop stopColor="#103c50"/><stop offset="1" stopColor="#09232f"/></linearGradient>
-      <radialGradient id={id('hole')}><stop stopColor="#031923"/><stop offset=".63" stopColor="#0c2933"/><stop offset=".67" stopColor="#213f49"/><stop offset="1" stopColor="#071e29"/></radialGradient>
-      <pattern id={id('engraving')} width="22" height="22" patternUnits="userSpaceOnUse">
-        <path d="M11 1C15 5 20 4 21 11C17 15 18 20 11 21C7 17 2 18 1 11C5 7 4 2 11 1Z M11 5C14 8 16 7 17 11C14 14 15 16 11 17C8 14 6 15 5 11C8 8 7 6 11 5Z M11 8L14 11L11 14L8 11Z" fill="none" stroke="#e5e7df" strokeWidth=".45" opacity=".65"/>
-        <path d="M0 0L3 3M22 0L19 3M0 22L3 19M22 22L19 19" stroke="#677e89" strokeWidth=".4" opacity=".5"/>
-      </pattern>
-      <pattern id={id('gold-grain')} width="16" height="16" patternUnits="userSpaceOnUse"><path d="M8 0Q8 8 0 8Q8 8 8 16Q8 8 16 8Q8 8 8 0Z M2 2L4 4M12 12L14 14" fill="none" stroke="#ffe1a5" strokeWidth=".6" opacity=".48"/><circle cx="8" cy="8" r="2.5" fill="none" stroke="#947143" strokeWidth=".35" opacity=".4"/></pattern>
-      <pattern id={id('hatch')} width="7" height="7" patternUnits="userSpaceOnUse"><path d="M-1 1L1-1M0 7L7 0M6 8L8 6" stroke="#c1cbd0" strokeWidth=".6" opacity=".36"/></pattern>
-      <clipPath id={id('pads')}><path d={LEFT_ELECTRODE}/><path d={RIGHT_ELECTRODE}/></clipPath>
+      {(['package','board','substrate','ground','capacitor','junction','gate'] as PartId[]).map(part => <linearGradient key={part} id={id(part)} x1="0" y1="0" x2="0.2" y2="1">
+        <stop stopColor={color(part)}/><stop offset=".48" stopColor={color(part)}/><stop offset="1" stopColor={color(part)}/>
+      </linearGradient>)}
+      {/* Restrained microfinish: circuit detail comes from lithography, not ornamental engraving. */}
+      <pattern id={id('brushed')} width="51" height="3.8" patternUnits="userSpaceOnUse"><path d="M0 .5H51M6 2H25M34 3H49" stroke="#fff" strokeWidth=".25" opacity=".18"/><path d="M0 1.2H38" stroke="#17202a" strokeWidth=".25" opacity=".13"/></pattern>
+      <pattern id={id('ceramic')} width="8" height="7" patternUnits="userSpaceOnUse"><path d="M1 2h.5M6 5h.5M3 6h.4" stroke="#fff" strokeWidth=".5" opacity=".12"/></pattern>
+      <linearGradient id={id('polished')} x2=".3" y2="1"><stop stopColor="#fff" stopOpacity=".09"/><stop offset=".5" stopColor="#fff" stopOpacity="0"/><stop offset="1" stopColor="#142332" stopOpacity=".09"/></linearGradient>
+      <linearGradient id={id('crystalline')} x2=".5" y2="1"><stop stopColor="#c3c9df" stopOpacity=".12"/><stop offset=".55" stopColor="#354b72" stopOpacity=".03"/><stop offset="1" stopColor="#030c19" stopOpacity=".08"/></linearGradient>
+      <clipPath id={id('substrate-clip')}><path d={SUBSTRATE_PLAN} transform={PLAN_TRANSFORM}/></clipPath>
+      <clipPath id={id('region')}><rect x="237" y="47" width="526" height="526" rx="20"/></clipPath>
+      <mask id={id('perforations')} maskUnits="userSpaceOnUse" x="290" y="90" width="420" height="440">
+        <rect x="290" y="90" width="420" height="440" fill="white"/>
+        <path d={perforations.join('')} transform={FILM_TRANSFORM} fill="black"/>
+        {groundRegions({fill:'none',stroke:'white',strokeWidth:PERFORATIONS.border * CHIP.size * world / 2048})}
+      </mask>
     </defs>
-    {/* Carrier: artwork context only, never an extra circuit element. */}
-    {visible('package') && <g {...pick('package','Package & clamps — mechanical context')}>
-      <rect className="part-outline" x="80" y="58" width="840" height="514" rx="39" fill="#061c26" opacity=".5"/>
-      <rect x="80" y="48" width="840" height="514" rx="39" fill={fill('gold')} stroke="#987443" strokeWidth="2"/>
-      <rect x="84" y="52" width="832" height="506" rx="36" fill={fill('gold-grain')} stroke="#ffe1a4" strokeWidth="1.1"/>
-      <rect className="part-outline" x="112" y="82" width="776" height="446" rx="9" fill="#182b32" stroke="#a78750" strokeWidth="2"/>
-
-      {[115,885].flatMap(x => [83,527].map(y => <g key={`${x}-${y}`}><circle cx={x} cy={y} r="30" fill={fill('gold')} stroke="#ffe6ad"/><circle cx={x} cy={y} r="17.5" fill={fill('hole')} stroke="#917145" strokeWidth="1.8"/><path d={`M${x-11} ${y-11}A15 15 0 0 1 ${x+13} ${y-8}`} fill="none" stroke="#89a0a7" strokeWidth=".65"/></g>))}
-      {[280,350,650,720].flatMap(x=>[64,546].map(y=><path key={`${x}-${y}`} d={`M${x-7} ${y-15}V${y+15}M${x+7} ${y-15}V${y+15}`} stroke="#846637" strokeWidth="1"/>))}
+    {visible('board') && <g {...pick('board','Carrier board — chip support')} clipPath={fill('region')}>
+      <rect className="part-outline" x="237" y="47" width="526" height="526" rx="20" fill={fill('board')} stroke="#747b7d"/>
+      <rect x="237" y="47" width="526" height="526" rx="20" fill={finish('board')}/>
+      <rect x={500-.445/DIE_SCALE*world} y={310-.445/DIE_SCALE*world} width={.89/DIE_SCALE*world} height={.89/DIE_SCALE*world} rx="2" fill="#b18136"/>
     </g>}
-    {visible('board') && <g {...pick('board','Carrier board — chip support')}><path className="part-outline" d="M134 91H866L877 102V508L866 519H134L123 508V102Z" fill={fill('navy')} stroke="#71848b"/></g>}
-    <g aria-hidden="true">
-      {[141,859].flatMap(x=>Array.from({length:23},(_,i)=><g key={`${x}-${i}`}><rect x={x-8} y={151+i*13} width="5" height="6" rx=".7" fill={fill('gold')}/><rect x={x+2} y={151+i*13} width="5" height="6" rx=".7" fill="#e5bd79"/></g>))}
-    </g>
-    {visible('substrate') && <g {...pick('substrate','Substrate — continuous chip base')}><path className="part-outline" d={SUBSTRATE_PLAN} fill={fill('navy')} stroke="#5995b5" strokeWidth="1.2"/><path d="M182 121H818L843 146V464L818 489H182L157 464V146Z" fill="none" stroke="#1175ac" strokeWidth="1"/></g>}
-    {visible('ground') && <g {...pick('ground','Ground metal — openings expose the substrate')}><path className="part-outline" d={`${GROUND_BOUNDARY} ${METAL_OPENING}`} fill="#526772" fillRule="evenodd" stroke="#bdcdd5" strokeWidth="1.5"/><path d={`${GROUND_BOUNDARY} ${METAL_OPENING}`} fill={fill('hatch')} fillRule="evenodd"/><path d="M224 151H775L795 172M224 469H775L795 448" fill="none" stroke="#f0eee1" strokeWidth=".7"/></g>}
-    <g aria-hidden="true">
-      {[285,355,645,715].flatMap(x=>[0,1].map(bottom=><g key={`${x}-${bottom}`} transform={bottom?'translate(0 610) scale(1 -1)':undefined}>
-        {Array.from({length:4},(_,i)=><g key={i} transform={`translate(${x+i*15-22} 0)`}><rect x="-6" y="47" width="12" height="47" rx="2" fill="#8a693a" stroke="#efcf8c"/><rect x="-4" y="48" width="8" height="45" rx="2" fill={fill('gold')}/><rect x="-4" y="121" width="8" height="25" fill={fill('gold')}/><path d="M0 66C-2 79 3 100 0 134" stroke="#664b26" strokeWidth="4" fill="none"/><path d="M-1 64C-3 79 2 99-1 133" stroke="#f1d699" strokeWidth="2.5" fill="none"/><circle cx="-1" cy="64" r="2.5" fill="#fcdf9c"/><circle cx="-1" cy="133" r="2.5" fill="#e7bd70"/></g>)}
-      </g>))}
-      {[185,815].flatMap(x=>[305,337].map(y=><g key={`${x}-${y}`}><rect x={x-9} y={y-9} width="18" height="18" fill="#d9b16d" stroke="#ffdf99"/><rect x={x-6} y={y-6} width="12" height="12" fill="#9f834f"/><rect x={x-12} y={y-12} width="24" height="24" fill="none" stroke="#1777ac" strokeWidth=".8"/></g>))}
-      {[189,811].flatMap(x=>[135,475].map(y=><g key={`${x}-${y}`} stroke="#a5c3d3" fill="none" strokeWidth=".8"><rect x={x-4} y={y-4} width="8" height="8"/><path d={`M${x-2} ${y}H${x+2}M${x} ${y-2}V${y+2}`}/></g>))}
-    </g>
-    {visible('capacitor') && <>
-      {[['left',LEFT_ELECTRODE],['right',RIGHT_ELECTRODE]].map(([side,path])=><g key={side} {...pick('capacitor',`${side === 'left'?'Left':'Right'} capacitor pad — charging energy`)} data-side={side}>
-        <path d={path} fill="none" stroke="#142730" strokeWidth="8"/>
-        <path className="part-outline" d={path} fill={fill('silver')} stroke="#f1f0df" strokeWidth="1.5"/>
-        <path d={path} fill={fill('engraving')}/>
-        <path d={path} fill="none" stroke="#73858d" strokeWidth=".6" transform={`translate(${side==='left'?1:-1} 1)`}/>
+    {visible('package') && <g {...pick('package','Package aperture — surrounding shield detail')}>
+      <path className="part-outline" d={`M257 47H743Q763 47 763 67V553Q763 573 743 573H257Q237 573 237 553V67Q237 47 257 47Z M${500-aperture/2+12} ${310-aperture/2}h${aperture-24}q12 0 12 12v${aperture-24}q0 12 -12 12h-${aperture-24}q-12 0 -12 -12v-${aperture-24}q0 -12 12 -12Z`} fill={fill('package')} fillRule="evenodd" stroke="#d0d1c8" strokeWidth=".8"/>
+      <path d={`M237 47H763V573H237Z M${500-aperture/2} ${310-aperture/2}h${aperture}v${aperture}h-${aperture}Z`} fill={finish('package')} fillRule="evenodd"/>
+      <rect x={500-lipOuter/2} y={310-lipOuter/2} width={lipOuter} height={lipOuter} rx="20" fill="none" stroke="#444940" strokeOpacity=".5" strokeWidth="1.1"/>
+      <rect x={500-aperture/2-2} y={310-aperture/2-2} width={aperture+4} height={aperture+4} rx="13" fill="none" stroke={color('package')} strokeWidth="3"/>
+      {sides.map(side=><g key={side} transform={`rotate(${side*90} 500 310)`} fill={BOND_FINISH.land}>
+        {Array.from({length:BOND_COUNT},(_,i)=><rect key={i} x={500+bondPosition(i)*1.05*world-.009/DIE_SCALE*world/2} y={310+(PLATE.window/2+.040)/DIE_SCALE*world-.043/DIE_SCALE*world/2} width={.009/DIE_SCALE*world} height={.043/DIE_SCALE*world}/>)}
       </g>)}
-      <g clipPath={fill('pads')} pointerEvents="none" stroke="#7e919c" strokeWidth=".6">{[350,375,397,417,436,451,465].flatMap(x=>[x,1000-x].map(v=><g key={v}><line x1={v} x2={v} y1="225" y2="397"/><line x1={v-2} x2={v-2} y1="225" y2="397" stroke="#e2e4dc"/></g>))}</g>
-    </>}
-    {visible('gate') && <g {...pick('gate','Charge gate — offset charge')}><path d="M730 299H940V321H730Z" fill="#1b3441" stroke="#247aa0" strokeWidth="1"/><path className="part-outline" d={GATE_PLAN} fill={fill('gold')} stroke="#f6d797"/><path d="M736 306H940" stroke="#ffedbc" strokeWidth=".7"/><path d="M735 312H939" stroke="#ad854b" strokeWidth=".7"/><path d="M735 310H942" stroke="transparent" strokeWidth="36"/><rect x="750" y="299" width="180" height="22" fill={fill('gold-grain')} pointerEvents="none"/></g>}
-    {visible('junction') && <g {...pick('junction','Josephson junction — Josephson energy')}>
-      <rect x="487" y="306" width="13" height="8" fill={fill('silver')} stroke="#f3ead4" strokeWidth=".8"/><rect x="500" y="306" width="13" height="8" fill={fill('silver')} stroke="#f3ead4" strokeWidth=".8"/>
-      <rect x="498" y="305" width="4" height="10" fill="#ecd08c" stroke="#f9e8b3" strokeWidth=".5"/>
-      <rect className="junction-selection" x="483" y="294" width="34" height="32" fill="#0783ff16" stroke={selected==='junction'?'#2c9cff':'transparent'} strokeWidth="1.5"/>
-      {detail && <path d="M498 304V316M502 304V316" stroke="#7dccff" strokeWidth=".4"/>}
+      <g fill="#303a36" fontFamily="monospace" fontSize="5.5" letterSpacing=".6"><text x="500" y="63" textAnchor="middle">QS–01 / SHIELD APERTURE</text><text x="500" y="562" textAnchor="middle">TRANSMON · REV A</text></g>
+    </g>}
+    {visible('substrate') && <g {...pick('substrate','Substrate — continuous chip base')} transform={PLAN_TRANSFORM}>
+      <path className="part-outline" d={SUBSTRATE_PLAN} fill={fill('substrate')} stroke="#657387" strokeWidth="1.2" vectorEffect="non-scaling-stroke"/>
+      <path d={SUBSTRATE_PLAN} fill={finish('substrate')}/>
+    </g>}
+    {visible('ground') && <g {...pick('ground','Ground metal — openings expose the substrate')}>
+      <g mask={fill('perforations')} data-detail="ground-perforations">
+        {groundRegions({className:'part-outline',fill:fill('ground'),stroke:'#d7dce0',strokeWidth:.65,vectorEffect:'non-scaling-stroke'})}
+        {groundRegions({fill:finish('ground')})}
+      </g>
+      <g clipPath={fill('substrate-clip')} data-detail="film-fanouts" fill={color('ground')} stroke={color('ground')}>
+        <g transform={FILM_TRANSFORM}>
+          {sides.map(side=><g key={side} transform={`rotate(${side*90})`}>
+            {FILM_LAUNCHES.map((launch,i)=><g key={i}><rect x={launch.x-4.5} y="936" width="9" height="38" stroke="none"/><rect x={launch.x-3} y="904" width="6" height="14" stroke="none"/><polyline points={polygon(launch.points)} fill="none" strokeWidth={launch.width}/></g>)}
+            <rect x="-895" y="890" width="1790" height="101" fill="none" strokeWidth="2"/>
+          </g>)}
+          {[-1,1].flatMap(x=>[-1,1].map(y=><g key={`${x},${y}`} fill="none" strokeWidth="2"><rect x={x*795-17} y={y*795-17} width="34" height="34"/><path d={`M${x*690-13} ${y*690}h26M${x*690} ${y*690-13}v26`}/></g>))}
+        </g>
+      </g>
+      <g data-detail="bond-contacts" fill={BOND_FINISH.foot}>
+        {sides.map(side=><g key={side} transform={`rotate(${-side*90} 500 310)`}>
+          {Array.from({length:BOND_COUNT},(_,i)=>{const points=bondPoints(i,side).map(([x,,z])=>inspectionWorldPoint(x,z));return <g key={i}><polyline points={polygon(points)} fill="none" stroke={BOND_FINISH.wire} strokeWidth={.0023*world} strokeLinejoin="round"/>{[points[0],points[2]].map(([x,y],j)=><ellipse key={j} cx={x} cy={y} rx={.0032*world} ry={.0062*world}/>)}</g>;})}
+        </g>)}
+      </g>
+    </g>}
+    {visible('capacitor') && <g transform={PLAN_TRANSFORM}>
+      {[['left',LEFT_ELECTRODE],['right',RIGHT_ELECTRODE]].map(([side,path])=><g key={side} {...pick('capacitor',`${side==='left'?'Left':'Right'} capacitor pad — charging energy`)} data-side={side}>
+        <path className="part-outline" d={path} fill={fill('capacitor')} stroke="#e0e5e8" strokeWidth=".8" vectorEffect="non-scaling-stroke"/>
+        <path d={path} fill={finish('capacitor')}/>
+      </g>)}
+    </g>}
+    {visible('gate') && <g {...pick('gate','Charge gate — offset charge')} transform={PLAN_TRANSFORM}>
+      <path className="part-outline" d={GATE_PLAN} fill={fill('gate')} stroke="#e0e4e6" strokeWidth=".7" vectorEffect="non-scaling-stroke"/>
+      <path d={GATE_PLAN} fill={finish('gate')}/><path d="M733 310H942" stroke="transparent" strokeWidth="28"/>
+    </g>}
+    {visible('junction') && <g {...pick('junction','Josephson junction — Josephson energy')} data-detail="junction-overlap">
+      <polygon className="part-outline" points={polygon(JUNCTION_ELECTRODE.map(([x,y])=>inspectionWorldPoint(x,-y)))} fill={fill('junction')} stroke="#e6e8e9" strokeWidth=".45"/>
+      <rect x={500-JUNCTION_OVERLAP.width*world/2} y={310+(JUNCTION_OVERLAP.z-JUNCTION_OVERLAP.depth/2)*world} width={JUNCTION_OVERLAP.width*world} height={JUNCTION_OVERLAP.depth*world} fill={JUNCTION_OVERLAP.color}/>
+      <polygon className="part-outline" points={polygon(JUNCTION_ELECTRODE.map(([x,y])=>inspectionWorldPoint(-x,y+JUNCTION_OVERLAP.upperZ)))} fill={fill('junction')} stroke="#eef0f2" strokeWidth=".45"/>
+      {detail&&<path d={`M${500-JUNCTION_OVERLAP.width*world/2} ${310+(JUNCTION_OVERLAP.z-JUNCTION_OVERLAP.depth/2)*world}h${JUNCTION_OVERLAP.width*world}`} stroke={JUNCTION_OVERLAP.color} strokeWidth=".7"/>}
+      <rect className="junction-selection" x="482" y="298" width="36" height="26" rx="2" fill="none" stroke={selected==='junction'?'#2c9cff':'transparent'} strokeWidth=".8"/>
       <rect x="479" y="288" width="42" height="44" fill="transparent"/>
     </g>}
   </g>;
