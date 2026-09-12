@@ -51,6 +51,7 @@ export interface SearchCandidate extends DeviceResult {
 export interface SearchResult {
   status: 'feasible' | 'infeasible';
   selected: SearchCandidate | null;
+  candidates: SearchCandidate[];
   evaluated_count: number;
   feasible_count: number;
   selection_rule: string;

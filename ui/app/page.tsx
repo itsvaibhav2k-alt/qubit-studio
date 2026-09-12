@@ -7,7 +7,10 @@ import Inspector from '@/components/Inspector';
 import PartsTree from '@/components/PartsTree';
 import ResultsDock from '@/components/ResultsDock';
 import Schematic from '@/components/Schematic';
+import RichMathText from '@/components/RichMathText';
 import type { ViewportHandle } from '@/components/Viewport3D';
+import { createDesignShareUrl, parseDesignShareUrl } from '@/lib/design-link';
+import { num } from '@/lib/format';
 import { topicFromPart, type TopicId } from '@/lib/explain-topics';
 import { buildChipSnapshot } from '@/lib/insight-snapshot';
 import { DEFAULT_PARAMS, clampParam, sameParams } from '@/lib/params';
@@ -41,6 +44,17 @@ const PRESETS: Record<string, DeviceParams> = {
   anharmonic: { ej_ghz: 10, ec_ghz: 0.4, ng: 0, ncut: 30 },
 };
 
+interface DesignSnapshot {
+  id: string;
+  savedAt: string;
+  params: DeviceParams;
+  goals: DesignGoals;
+  topMaterial: string;
+  baseMaterial: string;
+}
+
+const HISTORY_KEY = 'qubit-studio-saved-designs-v2';
+
 export default function Page() {
   const [params, setParams] = useState<DeviceParams>(DEFAULT_PARAMS);
   const [selected, setSelected] = useState<PartId | null>(null);
@@ -56,6 +70,8 @@ export default function Page() {
     topColor: materialColor('Al'),
     baseColor: materialColor('Si'),
   });
+  const [history, setHistory] = useState<DesignSnapshot[]>([]);
+  const [shareStatus, setShareStatus] = useState<string | null>(null);
 
   // AI feature state
   const [selectedTopics, setSelectedTopics] = useState<Set<TopicId>>(new Set());
@@ -83,6 +99,28 @@ export default function Page() {
   const topicsArray = useMemo(() => Array.from(selectedTopics), [selectedTopics]);
   const explain = useExplain(snapshot, topicsArray);
 
+  const saveCurrentDesign = useCallback(() => {
+    const snapshot: DesignSnapshot = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      savedAt: new Date().toISOString(),
+      params,
+      goals,
+      topMaterial: materials.topMaterial,
+      baseMaterial: materials.baseMaterial,
+    };
+    setHistory((current) => {
+      const signature = JSON.stringify({ ...snapshot, id: '', savedAt: '' });
+      const next = [
+        snapshot,
+        ...current.filter((item) => JSON.stringify({ ...item, id: '', savedAt: '' }) !== signature),
+      ].slice(0, 10);
+      window.localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      return next;
+    });
+    setShareStatus('Design saved');
+    window.setTimeout(() => setShareStatus(null), 2000);
+  }, [goals, materials.baseMaterial, materials.topMaterial, params]);
+
   const changeParam = useCallback((key: ParamKey, value: number) => {
     setParams((current) => ({ ...current, [key]: clampParam(key, value) }));
   }, []);
@@ -103,6 +141,44 @@ export default function Page() {
       baseColor: materialColor(baseMaterial),
     });
   }, []);
+
+  const changeGoals = useCallback((nextGoals: DesignGoals) => {
+    setGoals(nextGoals);
+  }, []);
+
+  const restoreSnapshot = useCallback((snapshot: DesignSnapshot) => {
+    setParams(snapshot.params);
+    setGoals(snapshot.goals);
+    setMaterials({
+      topMaterial: snapshot.topMaterial,
+      baseMaterial: snapshot.baseMaterial,
+      topColor: materialColor(snapshot.topMaterial),
+      baseColor: materialColor(snapshot.baseMaterial),
+    });
+    setShareStatus('Saved design restored');
+    window.setTimeout(() => setShareStatus(null), 2000);
+  }, []);
+
+  const restoreLatestDesign = useCallback(() => {
+    if (history[0]) restoreSnapshot(history[0]);
+  }, [history, restoreSnapshot]);
+
+  const copyShareLink = useCallback(async () => {
+    const url = createDesignShareUrl({
+      params,
+      goals,
+      topMaterial: materials.topMaterial,
+      baseMaterial: materials.baseMaterial,
+    }, window.location.href);
+    window.history.replaceState(null, '', url);
+    try {
+      await navigator.clipboard.writeText(url);
+      setShareStatus('Link copied');
+    } catch {
+      setShareStatus('Link added to address bar');
+    }
+    window.setTimeout(() => setShareStatus(null), 2500);
+  }, [goals, materials.baseMaterial, materials.topMaterial, params]);
 
   const currentMaterialColors = materialPartColors(materials);
 
@@ -153,6 +229,32 @@ export default function Page() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const stored = window.localStorage.getItem(HISTORY_KEY);
+        if (stored) setHistory((JSON.parse(stored) as DesignSnapshot[]).slice(0, 10));
+      } catch {
+        window.localStorage.removeItem(HISTORY_KEY);
+      }
+
+      const shared = parseDesignShareUrl(window.location.href);
+      if (shared) {
+        setParams(shared.params);
+        setGoals(shared.goals);
+        setMaterials({
+          topMaterial: shared.topMaterial,
+          baseMaterial: shared.baseMaterial,
+          topColor: materialColor(shared.topMaterial),
+          baseColor: materialColor(shared.baseMaterial),
+        });
+        setShareStatus('Shared design loaded');
+        window.setTimeout(() => setShareStatus(null), 2500);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   const show3d = view === '3d' || view === 'split';
   const showSchematic = view === 'schematic' || view === 'split';
   // Pinning is only meaningful for a completed calculation of the current parameters.
@@ -193,10 +295,28 @@ export default function Page() {
         </div>
         <span className="spacer" />
         <span className={statusBadge.className}>{statusBadge.text}</span>
+        {shareStatus && <span className="share-status">{shareStatus}</span>}
+        <button type="button" className="btn" onClick={copyShareLink}>Copy share link</button>
+        <button type="button" className="btn primary" onClick={saveCurrentDesign}>Save design</button>
+        <button type="button" className="btn" onClick={restoreLatestDesign} disabled={history.length === 0}>Restore latest</button>
+        <details className="history-menu">
+          <summary>Saved ({history.length})</summary>
+          <div className="history-popover">
+            <strong>Saved designs</strong>
+            {history.length === 0 ? <p>Save a design to keep it here.</p> : history.map((snapshot) => (
+              <button key={snapshot.id} type="button" onClick={() => restoreSnapshot(snapshot)}>
+                <span><RichMathText>{`${num(snapshot.goals.target_ghz, 1)} GHz · EJ ${num(snapshot.params.ej_ghz, 2)} GHz · EC ${num(snapshot.params.ec_ghz, 3)} GHz`}</RichMathText></span>
+                <small>{snapshot.topMaterial} + {snapshot.baseMaterial} · {new Date(snapshot.savedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small>
+              </button>
+            ))}
+          </div>
+        </details>
         <label className="preset-control">
           Demo
           <select defaultValue="" onChange={(event) => {
-            if (event.target.value) setParams(PRESETS[event.target.value]);
+            if (event.target.value) {
+              setParams(PRESETS[event.target.value]);
+            }
             event.target.value = '';
           }}>
             <option value="" disabled>Choose preset…</option>
@@ -206,11 +326,13 @@ export default function Page() {
             <option value="anharmonic">High anharmonicity</option>
           </select>
         </label>
-        <button type="button" className="btn" onClick={exportReport} disabled={!result}>Export report</button>
+        <button type="button" className="btn" onClick={exportReport} disabled={!result}>Export data (.json)</button>
         <button
           type="button"
           className="btn"
-          onClick={() => setParams(DEFAULT_PARAMS)}
+          onClick={() => {
+            setParams(DEFAULT_PARAMS);
+          }}
           disabled={atDefaults}
           title="Return EJ, EC, ng and ncut to the model defaults"
         >
@@ -298,6 +420,7 @@ export default function Page() {
               {selected && <span className="badge live">{PART_BY_ID[selected].name}</span>}
             </div>
             <Viewport3D
+              params={params}
               selected={selected}
               hiddenParts={hiddenParts}
               explode={explode}
@@ -335,7 +458,7 @@ export default function Page() {
           onChange={changeParam}
           onApplyMaterialScenario={applyMaterialScenario}
           goals={goals}
-          onGoalsChange={setGoals}
+          onGoalsChange={changeGoals}
           onMaterialsChange={changeMaterials}
           materials={materials}
           selectedTopics={selectedTopics}

@@ -7,6 +7,13 @@ import { Vector3, type PerspectiveCamera } from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { PART_BY_ID } from '@/lib/parts';
 import type { PartId } from '@/lib/parts';
+import {
+  capacitorAreaFromEc,
+  DEFAULT_GEOMETRY_ASSUMPTIONS,
+  junctionAreaFromEj,
+} from '@/lib/geometry-model';
+import { DEFAULT_PARAMS } from '@/lib/params';
+import type { DeviceParams } from '@/lib/types';
 
 export interface ViewportHandle {
   resetView: () => void;
@@ -124,6 +131,7 @@ function FitToViewport() {
 }
 
 interface SceneProps {
+  params: DeviceParams;
   selected: PartId | null;
   hiddenParts: PartId[];
   explode: number;
@@ -133,9 +141,29 @@ interface SceneProps {
 }
 
 /** Illustrative chip geometry. Dimensions are exaggerated for legibility. */
-function Scene({ selected, hiddenParts, explode, onSelect, controlsRef, materialColors }: SceneProps) {
+function Scene({ params, selected, hiddenParts, explode, onSelect, controlsRef, materialColors }: SceneProps) {
   const hidden = (id: PartId) => hiddenParts.includes(id);
   const common = { explode, onSelect, selected: false, hidden: false, metal: true };
+  const referenceJunctionArea = junctionAreaFromEj(
+    DEFAULT_PARAMS.ej_ghz,
+    DEFAULT_GEOMETRY_ASSUMPTIONS.criticalCurrentDensityAcm2,
+  );
+  const junctionArea = junctionAreaFromEj(
+    params.ej_ghz,
+    DEFAULT_GEOMETRY_ASSUMPTIONS.criticalCurrentDensityAcm2,
+  );
+  const junctionScale = Math.min(1.8, Math.max(0.55, Math.sqrt(junctionArea / referenceJunctionArea)));
+  const referenceCapacitorArea = capacitorAreaFromEc(
+    DEFAULT_PARAMS.ec_ghz,
+    DEFAULT_GEOMETRY_ASSUMPTIONS.capacitanceDensityFfUm2,
+  );
+  const capacitorArea = capacitorAreaFromEc(
+    params.ec_ghz,
+    DEFAULT_GEOMETRY_ASSUMPTIONS.capacitanceDensityFfUm2,
+  );
+  const capacitorScale = Math.min(1.35, Math.max(0.7, Math.sqrt(capacitorArea / referenceCapacitorArea)));
+  const padWidth = 0.34 * capacitorScale;
+  const padPosition = padWidth / 2 + 0.03;
 
   const groundBars: Array<{ size: [number, number, number]; position: [number, number, number] }> = [
     { size: [1.42, 0.02, 0.18], position: [0, -0.012, -0.44] },
@@ -177,12 +205,12 @@ function Scene({ selected, hiddenParts, explode, onSelect, controlsRef, material
         />
       ))}
 
-      {[-0.2, 0.2].map((x) => (
+      {[-padPosition, padPosition].map((x) => (
         <Solid
           {...common}
           key={`pad-${x}`}
           id="capacitor"
-          size={[0.34, 0.028, 0.52]}
+          size={[padWidth, 0.028, 0.52 * capacitorScale]}
           position={[x, 0.002, 0]}
           explodeY={0.26}
           selected={selected === 'capacitor'}
@@ -194,7 +222,7 @@ function Scene({ selected, hiddenParts, explode, onSelect, controlsRef, material
       <Solid
         {...common}
         id="junction"
-        size={[0.07, 0.034, 0.06]}
+        size={[0.07 * junctionScale, 0.034, 0.06 * junctionScale]}
         position={[0, 0.005, 0]}
         explodeY={0.42}
         selected={selected === 'junction'}
@@ -234,6 +262,7 @@ interface Viewport3DProps extends Omit<SceneProps, 'controlsRef'> {
 }
 
 export default function Viewport3D({
+  params,
   selected,
   hiddenParts,
   explode,
@@ -269,6 +298,7 @@ export default function Viewport3D({
       style={{ position: 'absolute', inset: 0 }}
     >
       <Scene
+        params={params}
         selected={selected}
         hiddenParts={hiddenParts}
         explode={explode}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import MathText from '@/components/MathText';
 import { PARAMS, clampParam } from '@/lib/params';
 import type { ParamKey } from '@/lib/params';
 
@@ -48,7 +49,7 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
     <div className="field">
       <div className="field-head">
         <label htmlFor={`p-${paramKey}`}>{spec.label}</label>
-        <span className="sym">{spec.symbol}</span>
+        <MathText className="sym" math={spec.symbol} />
         <button
           type="button"
           className="reset"
@@ -84,7 +85,7 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
             }
           }}
         />
-        <span className="unit">{spec.unit}</span>
+        {spec.unit && <MathText className="unit" math={spec.unit === '2e' ? '2e' : `\\mathrm{${spec.unit}}`} />}
       </div>
       {invalid && <p className="field-msg">{invalid}</p>}
     </div>

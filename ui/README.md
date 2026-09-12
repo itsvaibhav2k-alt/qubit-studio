@@ -15,5 +15,15 @@ EJ/EC stress test, flux and junction-asymmetry controls, demo presets, and JSON 
 export. Material combinations remain explicitly labeled as sensitivity scenarios unless
 the imported dataset has a matching record.
 
+Design search also includes beginner goal presets, an interactive chart of every passing
+electrical design, a plain-language explanation of the selected trade-off, and a printable
+one-page PDF report. The chart can be expanded into a larger interactive dialog for easier
+comparison.
+
+The workspace lets users explicitly save up to ten designs and restore them without removing
+them from the list. It can copy a complete design into a shareable URL, previews whether goals
+look reachable with a smaller solver sweep, and includes an assumption-labeled geometry editor
+whose junction and capacitor values reshape both its live preview and the applied 3D chip.
+
 See [IMPLEMENTATION-REPORT.md](./IMPLEMENTATION-REPORT.md) for what is implemented,
 what is deliberately missing, and the command list.

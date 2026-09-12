@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import MathText from '@/components/MathText';
+import RichMathText from '@/components/RichMathText';
 import { num, signed } from '@/lib/format';
 import { BCQT_SOURCE, MATERIAL_CATALOG, MATERIAL_RECORDS } from '@/lib/material-records';
 import { materialColor } from '@/lib/material-colors';
@@ -117,12 +119,12 @@ export default function MaterialSensitivity({ params, result, onApply, onMateria
               <dt>Geometry</dt><dd>{matchingRecord.geometry}</dd>
               <dt>Measured δLP</dt>
               <dd>
-                {matchingRecord.lowPowerLossMin === matchingRecord.lowPowerLossMax
+                <RichMathText>{matchingRecord.lowPowerLossMin === matchingRecord.lowPowerLossMax
                   ? matchingRecord.lowPowerLossMin.toExponential(1)
-                  : `${matchingRecord.lowPowerLossMin.toExponential(1)}–${matchingRecord.lowPowerLossMax.toExponential(1)}`}
+                  : `${matchingRecord.lowPowerLossMin.toExponential(1)}–${matchingRecord.lowPowerLossMax.toExponential(1)}`}</RichMathText>
               </dd>
               {decayLow !== null && decayHigh !== null && (
-                <><dt>Decay scale</dt><dd>~{num(decayLow, 1)}{decayLow !== decayHigh ? `–${num(decayHigh, 1)}` : ''} µs*</dd></>
+                <><dt>Decay scale</dt><dd><MathText math={`\\sim ${num(decayLow, 1)}${decayLow !== decayHigh ? `\\text{–}${num(decayHigh, 1)}` : ''}\\,\\mu\\mathrm{s}`} />*</dd></>
               )}
             </dl>
             <p className="scenario-scope">
@@ -147,7 +149,7 @@ export default function MaterialSensitivity({ params, result, onApply, onMateria
       </div>
 
       <label className="scenario-field">
-        <span>Junction effect <strong>{signed((junctionFactor - 1) * 100, 0)}%</strong></span>
+        <span>Junction effect <strong><MathText math={`${signed((junctionFactor - 1) * 100, 0)}\\,\\%`} /></strong></span>
         <input
           type="range"
           min={0.5}
@@ -162,7 +164,7 @@ export default function MaterialSensitivity({ params, result, onApply, onMateria
       </label>
 
       <label className="scenario-field">
-        <span>Total capacitance <strong>{signed((capacitanceFactor - 1) * 100, 0)}%</strong></span>
+        <span>Total capacitance <strong><MathText math={`${signed((capacitanceFactor - 1) * 100, 0)}\\,\\%`} /></strong></span>
         <input
           type="range"
           min={0.5}
@@ -191,7 +193,7 @@ export default function MaterialSensitivity({ params, result, onApply, onMateria
 
       {isMajoranaPair && (
         <p className="illus">
-          The selected materials resemble part of Majorana 2, but the result below remains an isolated-transmon
+          The selected materials resemble part of Majorana <MathText math="2" />, but the result below remains an isolated-transmon
           sensitivity calculation—not a topological-qubit simulation.
         </p>
       )}
@@ -201,13 +203,13 @@ export default function MaterialSensitivity({ params, result, onApply, onMateria
         <div className="scenario-result" aria-live="polite">
           <dl className="kv">
             <dt>Scenario</dt><dd>{topMaterial} / {baseMaterial}</dd>
-            <dt>Frequency</dt><dd>{num(comparison.baseline.f01_ghz, 3)} → {num(comparison.modified.f01_ghz, 3)} GHz</dd>
-            <dt>Change</dt><dd>{signed(comparison.deltas.f01_ghz, 3)} GHz</dd>
-            <dt>Anharmonicity</dt><dd>{num(comparison.baseline.anharmonicity_mhz, 1)} → {num(comparison.modified.anharmonicity_mhz, 1)} MHz</dd>
-            <dt>Dispersion</dt><dd>{num(comparison.baseline.dispersion_upper_khz, 3)} → {num(comparison.modified.dispersion_upper_khz, 3)} kHz</dd>
+            <dt>Frequency</dt><dd><MathText math={`${num(comparison.baseline.f01_ghz, 3)}\\to ${num(comparison.modified.f01_ghz, 3)}\\,\\mathrm{GHz}`} /></dd>
+            <dt>Change</dt><dd><MathText math={`${signed(comparison.deltas.f01_ghz, 3)}\\,\\mathrm{GHz}`} /></dd>
+            <dt>Anharmonicity</dt><dd><MathText math={`${num(comparison.baseline.anharmonicity_mhz, 1)}\\to ${num(comparison.modified.anharmonicity_mhz, 1)}\\,\\mathrm{MHz}`} /></dd>
+            <dt>Dispersion</dt><dd><MathText math={`${num(comparison.baseline.dispersion_upper_khz, 3)}\\to ${num(comparison.modified.dispersion_upper_khz, 3)}\\,\\mathrm{kHz}`} /></dd>
           </dl>
           <button type="button" className="btn" onClick={() => onApply(comparison.modified.ej_ghz, comparison.modified.ec_ghz)}>
-            Apply modified EJ and EC
+            Apply modified <MathText math="E_J" /> and <MathText math="E_C" />
           </button>
           <p className="scenario-scope">{comparison.scope}.</p>
         </div>

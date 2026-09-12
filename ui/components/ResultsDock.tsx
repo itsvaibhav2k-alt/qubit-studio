@@ -1,6 +1,8 @@
 'use client';
 
 import { DASH, delta, dispersionDisplay, num, paramSummary, signed } from '@/lib/format';
+import MathText from '@/components/MathText';
+import RichMathText from '@/components/RichMathText';
 import type { TopicId } from '@/lib/explain-topics';
 import type { ChargePoint, DesignGoals, DeviceResult } from '@/lib/types';
 
@@ -40,11 +42,11 @@ function Metric({ topicId, selected, label, symbol, value, muted, note, deltaTex
       onClick={() => onSelectTopic(topicId)}
     >
       <div className="k">
-        {label} {symbol && <span className="sym">{symbol}</span>}
+        {label} {symbol && <span className="sym"><RichMathText>{symbol}</RichMathText></span>}
       </div>
-      <div className={`v${muted ? ' none' : ''}`}>{value}</div>
-      {deltaText && <div className={`d ${deltaText.tone}`}>{deltaText.text}</div>}
-      {note && <div className="note">{note}</div>}
+      <div className={`v${muted ? ' none' : ''}`}><RichMathText>{value}</RichMathText></div>
+      {deltaText && <div className={`d ${deltaText.tone}`}><RichMathText>{deltaText.text}</RichMathText></div>}
+      {note && <div className="note"><RichMathText>{note}</RichMathText></div>}
     </button>
   );
 }
@@ -77,21 +79,21 @@ function EnergyLevels({ result, baseline }: { result: DeviceResult; baseline: De
           <text x="32" y={y(value) + 4} fontSize="11" textAnchor="end" fill="#5c6672" fontFamily="ui-monospace, Menlo, monospace">
             |{index}⟩
           </text>
-          <text x={LEVEL_W - 54} y={y(value) + 4} fontSize="10" fill="#878f9b" fontFamily="ui-monospace, Menlo, monospace">
-            {num(value, 3)}
-          </text>
+          <foreignObject x={LEVEL_W - 56} y={y(value) - 8} width="55" height="18" style={{ color: '#878f9b', fontSize: 10 }}>
+            <MathText math={num(value, 3)} />
+          </foreignObject>
         </g>
       ))}
       {levels.length > 2 && (
         <>
           <line x1="62" x2="62" y1={y(levels[0])} y2={y(levels[1])} stroke="#1a6fe0" strokeWidth="1.4" />
-          <text x="68" y={(y(levels[0]) + y(levels[1])) / 2 + 3} fontSize="10" fill="#1a6fe0">
-            f01 {num(result.f01_ghz, 3)} GHz
-          </text>
+          <foreignObject x="68" y={(y(levels[0]) + y(levels[1])) / 2 - 8} width="120" height="20" style={{ color: '#1a6fe0', fontSize: 10 }}>
+            <MathText math={`f_{01}=${num(result.f01_ghz, 3)}\\,\\mathrm{GHz}`} />
+          </foreignObject>
           <line x1="62" x2="62" y1={y(levels[1])} y2={y(levels[2])} stroke="#5c6672" strokeWidth="1.4" />
-          <text x="68" y={(y(levels[1]) + y(levels[2])) / 2 + 3} fontSize="10" fill="#5c6672">
-            f12 {num(result.f12_ghz, 3)} GHz
-          </text>
+          <foreignObject x="68" y={(y(levels[1]) + y(levels[2])) / 2 - 8} width="120" height="20" style={{ color: '#5c6672', fontSize: 10 }}>
+            <MathText math={`f_{12}=${num(result.f12_ghz, 3)}\\,\\mathrm{GHz}`} />
+          </foreignObject>
         </>
       )}
     </svg>
@@ -135,9 +137,9 @@ function ChargeResponse({ result, baseline }: { result: DeviceResult; baseline: 
       )}
       <polyline points={path(points, reference)} fill="none" stroke="#1a6fe0" strokeWidth="1.8" />
       <circle cx={x(result.ng)} cy={y(shiftKhz(result.f01_ghz, reference))} r="3.6" fill="#1a6fe0" />
-      <text x="52" y={CHART_H - 8} fontSize="10" fill="#878f9b">
-        ng 0
-      </text>
+      <foreignObject x="52" y={CHART_H - 20} width="50" height="18" style={{ color: '#878f9b', fontSize: 10 }}>
+        <MathText math="n_g=0" />
+      </foreignObject>
       <text x={CHART_W - 16} y={CHART_H - 8} fontSize="10" textAnchor="end" fill="#878f9b">
         1
       </text>
@@ -190,7 +192,7 @@ export default function ResultsDock({
       <div className="panel-head">
         Results
         <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--text-3)' }}>
-          {result ? paramSummary(result) : error ? 'no completed calculation' : 'waiting for first result'}
+          {result ? <RichMathText>{paramSummary(result)}</RichMathText> : error ? 'no completed calculation' : 'waiting for first result'}
         </span>
       </div>
 
@@ -269,7 +271,7 @@ export default function ResultsDock({
           <button type="button" className="btn" onClick={onClearBaseline} disabled={!baseline}>Clear</button>
         </div>
         <div className="dock-grid technical-grid">
-          <Metric topicId="ratio" selected={selectedTopics.has('ratio')} onSelectTopic={onSelectTopic} label="EJ / EC ratio" value={result ? num(result.ratio, 1) : DASH} muted={!result} deltaText={delta(result?.ratio, baseline?.ratio, 1, '')} />
+          <Metric topicId="ratio" selected={selectedTopics.has('ratio')} onSelectTopic={onSelectTopic} label="Energy ratio" symbol="EJ / EC" value={result ? num(result.ratio, 1) : DASH} muted={!result} deltaText={delta(result?.ratio, baseline?.ratio, 1, '')} />
           <Metric topicId="alpha" selected={selectedTopics.has('alpha')} onSelectTopic={onSelectTopic} label="Signed anharmonicity" symbol="α = f12 − f01" value={result ? `${signed(result.alpha_mhz, 1)} MHz` : DASH} muted={!result} deltaText={delta(result?.alpha_mhz, baseline?.alpha_mhz, 1, 'MHz')} />
           <Metric topicId="junction" selected={selectedTopics.has('junction')} onSelectTopic={onSelectTopic} label="Critical current" symbol="derived from EJ" value={result?.critical_current_na !== undefined ? `${num(result.critical_current_na, 2)} nA` : DASH} muted={result?.critical_current_na === undefined} />
           <Metric topicId="capacitor" selected={selectedTopics.has('capacitor')} onSelectTopic={onSelectTopic} label="Total capacitance" symbol="derived from EC" value={result?.total_capacitance_ff !== undefined ? `${num(result.total_capacitance_ff, 2)} fF` : DASH} muted={result?.total_capacitance_ff === undefined} />
@@ -300,7 +302,7 @@ export default function ResultsDock({
 
       {stale && (
         <p style={{ margin: 0, padding: '6px 12px 10px', fontSize: 11, color: 'var(--warn)' }}>
-          Updating — the values above still describe {result ? paramSummary(result) : 'the previous parameters'}.
+          Updating — the values above still describe {result ? <RichMathText>{paramSummary(result)}</RichMathText> : 'the previous parameters'}.
         </p>
       )}
     </>
