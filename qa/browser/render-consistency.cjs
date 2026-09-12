@@ -41,6 +41,7 @@ fs.mkdirSync(output,{recursive:true});
   const beforePan=await scene.getAttribute('viewBox');await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+45,box.y+box.height/2+20,{steps:5});await page.mouse.up();assert.notEqual(await scene.getAttribute('viewBox'),beforePan);
   await page.getByRole('button',{name:'Select parts',exact:true}).click();check('Both-pad / individual-pad inspection, zoom and pan');
   await select('junction');await labelsClear();await shot('04-junction');
+  assert.equal(await scene.locator('[data-part="junction"]').evaluate(n=>getComputedStyle(n).filter),'none','Keyboard focus must preserve sharp junction edges');
   assert.equal(await scene.locator('[data-detail="junction-overlap"] polygon').count(),2);check('Junction inspection uses two overlapping electrode contours');
   await toggle('Ground plane',false);
   assert.equal(await page.locator('.layout-artwork [data-part="ground"]').count(),0);
@@ -70,9 +71,29 @@ fs.mkdirSync(output,{recursive:true});
   await divider.focus();await divider.press('ArrowLeft');await divider.press('ArrowLeft');await divider.press('ArrowLeft');
   await select('capacitor');await shot('09-reference-materials');
   assert.equal(await scene.locator('[data-part="package"]').getAttribute('data-material'),'LaAlO3');assert.equal(await scene.locator('[data-part="board"]').getAttribute('data-material'),'Cr');check('Reference package and carrier materials propagate to layout');
+  const modelSnapshot=()=>page.evaluate(()=>({
+   materials:localStorage.getItem('qubit-studio.component-materials.v1'),
+   inputs:[...document.querySelectorAll('input')].map(n=>[n.id,n.value]),
+   parts:[...document.querySelectorAll('.layout-scene [data-part]')].map(n=>[n.getAttribute('data-part'),n.getAttribute('data-material'),n.getAttribute('aria-pressed')]),
+   geometry:[...document.querySelectorAll('.layout-scene .part-outline')].map(n=>['d','points','x','y','width','height','transform'].map(a=>n.getAttribute(a))),
+   camera:document.querySelector('.layout-scene').getAttribute('viewBox'),
+  }));
+  const materialState=await modelSnapshot();
+  await page.getByRole('button',{name:'Use layer colors',exact:true}).click();
+  await labelsClear();await shot('12-layer-colors');
+  assert.equal(await scene.locator('.uses-layer-colors').count(),1);
+  assert.deepEqual(await modelSnapshot(),materialState);
+  await page.getByRole('button',{name:'Use layer colors',exact:true}).click();
+  assert.equal(await scene.locator('.uses-layer-colors').count(),0);
+  check('Layer palette is reversible and preserves materials, inputs, selection, geometry and camera');
   await toggle('Package & clamps',false);await toggle('Carrier board',false);await page.getByRole('button',{name:'Reset 3D view',exact:true}).click();
   await page.getByRole('button',{name:'Inspect capacitor pads',exact:true}).click();await shot('10-die-and-pads');
   await select('junction');await shot('11-die-and-junction');check('Both views at die scale with package and carrier hidden');
+  await page.getByRole('button',{name:'Use layer colors',exact:true}).click();
+  assert.equal(await page.locator('.layout-locator .uses-layer-colors').count(),1);
+  await labelsClear();await shot('13-layer-junction');
+  await page.getByRole('button',{name:'Use layer colors',exact:true}).click();
+  check('Layer colors remain synchronized with the close-inspection locator');
   for(const name of ['Substrate','Ground plane','Shunt capacitor pads','Josephson junction','Charge gate line'])await toggle(name,false);
   assert.equal(await page.locator('.layout-artwork [data-part]').count(),0);
   await page.waitForFunction(()=>!document.querySelector('.hardware-canvas')?.dataset.bounds);check('Hide all clears both renderers and locator');

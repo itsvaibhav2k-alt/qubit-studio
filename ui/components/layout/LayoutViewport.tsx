@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
-import { ArrowLeft, Hand, Maximize, Minus, MousePointer2, Plus } from 'lucide-react';
-import type { ComponentMaterials } from '@/lib/component-materials';
+import { ArrowLeft, Hand, Layers, Maximize, Minus, MousePointer2, Plus } from 'lucide-react';
+import { resolveMaterial, type ComponentMaterials } from '@/lib/component-materials';
+import { BOND_COUNT } from '@/lib/chip-detail';
+import { INSPECTION_LAYER_COLORS } from '@/lib/layout-surface';
 import { placeInspectionLabels } from '@/lib/layout-labels';
 import type { PartId } from '@/lib/parts';
 import { boundedCamera, layoutViewBox, type LayoutCamera } from '@/lib/layout-geometry';
@@ -23,6 +25,7 @@ export default function LayoutViewport({ componentMaterials, selected, hiddenPar
   const surface = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 1000, height: 620 });
   const [pan, setPan] = useState(false);
+  const [layerColors,setLayerColors] = useState(false);
   const drag = useRef<{ x: number; y: number; camera: LayoutCamera; moved: boolean } | null>(null);
   const latest = useRef({ viewState, onViewState, size });
   useEffect(() => { latest.current = { viewState, onViewState, size }; }, [viewState, onViewState, size]);
@@ -70,12 +73,13 @@ export default function LayoutViewport({ componentMaterials, selected, hiddenPar
     {text:'Ground metal',part:'ground',anchor:[420,425],offset:[-135,20]},
   ];
   const projected = placeInspectionLabels(labels, box, size, selected, hiddenParts,
-    detail ? [{x:10,y:size.height-164,width:146,height:154}] : []);
+    detail ? [{x:10,y:size.height-143,width:126,height:133}] : []);
   return <section className="layout-viewport" aria-label="Interactive chip layout" onKeyDown={event=>{if(event.key==='Escape'&&detail){event.preventDefault();onViewState(returnFromInspection(viewState));}}}>
     <div className="layout-canvas-toolbar">
-      {detail ? <button className="layout-canvas-button" onClick={()=>onViewState(returnFromInspection(viewState))}><ArrowLeft size={16}/>Full chip</button> : <span className="layout-view-caption">TOP / TRANSMON 01</span>}
+      {detail ? <button className="layout-canvas-button" onClick={()=>onViewState(returnFromInspection(viewState))}><ArrowLeft size={16}/>Full chip</button> : <span className="layout-view-caption">DIE / TOP</span>}
       {detail && <span className="layout-inspection-caption">{inspection?.title} · illustrative</span>}
       <div className="layout-camera-controls">
+        <button className="layout-display-mode" aria-label="Use layer colors" aria-pressed={layerColors} title={layerColors?'Layer colors · switch to material appearance':'Material appearance · switch to layer colors'} onClick={()=>setLayerColors(!layerColors)}><Layers size={14}/><span>{layerColors?'Layers':'Material'}</span></button>
         <button aria-label="Select parts" aria-pressed={!pan} onClick={()=>setPan(false)}><MousePointer2 size={17}/></button>
         <button aria-label="Pan layout" aria-pressed={pan} onClick={()=>setPan(true)}><Hand size={17}/></button>
         <button aria-label="Zoom out" disabled={camera.zoom<=1} onClick={()=>zoom(1/1.25)}><Minus size={17}/></button>
@@ -87,16 +91,21 @@ export default function LayoutViewport({ componentMaterials, selected, hiddenPar
     {viewState.inspecting==='capacitor' && <div className="layout-pad-focus" role="group" aria-label="Capacitor inspection focus"><span>Inspect</span>{(['both','left','right'] as const).map(focus=><button key={focus} aria-pressed={viewState.padFocus===focus} onClick={()=>onInspect('capacitor',focus)}>{focus==='both'?'Both pads':focus==='left'?'Left pad':'Right pad'}</button>)}</div>}
     <div ref={surface} className={`layout-drawing${pan?' is-panning':''}`} onPointerDown={startPan} onPointerMove={movePan} onPointerUp={()=>{drag.current=null;}} onPointerCancel={()=>{drag.current=null;}} data-inspecting={detail}>
       <svg className="layout-scene" viewBox={`${box.x} ${box.y} ${box.width} ${box.height}`} aria-label="Transmon geometry with selectable capacitor pads, junction, gate, ground and substrate">
-        <LayoutArtwork componentMaterials={componentMaterials} selected={selected} hiddenParts={hiddenParts} onSelect={part=>{if(!pan&&!drag.current?.moved)onSelect(part);}} onInspect={part=>{if(!pan)onInspect(part);}} detail={detail}/>
+        <LayoutArtwork layerColors={layerColors} componentMaterials={componentMaterials} selected={selected} hiddenParts={hiddenParts} onSelect={part=>{if(!pan&&!drag.current?.moved)onSelect(part);}} onInspect={part=>{if(!pan)onInspect(part);}} detail={detail} pixelsPerUnit={size.width/box.width}/>
       </svg>
       {annotations && size.width>220 && <div className="layout-annotations" aria-label="Component annotations">
-        <svg viewBox={`0 0 ${size.width} ${size.height}`} aria-hidden="true">{projected.map((l,i)=><g key={i}><path d={`M${l.ax} ${l.ay}L${l.x+12} ${l.y+13}`} stroke={l.part===selected?'#61beff':'#c4d2d9'} fill="none" strokeWidth="1"/><circle cx={l.ax} cy={l.ay} r="2.6" fill={l.part===selected?'#61beff':'#e5eaeb'}/></g>)}</svg>
+        <svg viewBox={`0 0 ${size.width} ${size.height}`} aria-hidden="true">{projected.map((l,i)=><g key={i}><path d={`M${l.ax} ${l.ay}L${l.ax<l.x?l.x-10:l.x+l.width+10} ${l.y+l.height/2}H${l.ax<l.x?l.x:l.x+l.width}`} stroke={l.part===selected?'#87bdcf':'#819da9'} fill="none" strokeWidth=".75"/><circle cx={l.ax} cy={l.ay} r="1.8" fill={l.part===selected?'#acd6e2':'#a8bec6'}/></g>)}</svg>
         {projected.map((l,i)=><button key={i} className={l.part===selected?'selected':''} style={{left:l.x,top:l.y,width:l.width,height:l.height}} onClick={()=>l.part&&onSelect(l.part)}>{l.text}</button>)}
       </div>}
+      <div className="layout-datum" aria-hidden="true"><small>Y</small><span>X</span></div>
       {detail && <button className="layout-locator" aria-label="Return to previous full-chip view" onClick={()=>onViewState(returnFromInspection(viewState))}>
-        <svg viewBox="220 30 560 560" aria-hidden="true"><LayoutArtwork componentMaterials={componentMaterials} selected={selected} hiddenParts={hiddenParts} miniature/><rect x={box.x} y={box.y} width={box.width} height={box.height} fill="#2499ff22" stroke="#51baff" strokeWidth="8"/></svg><span>Full-chip locator</span>
+        <svg viewBox="220 30 560 560" aria-hidden="true"><LayoutArtwork layerColors={layerColors} componentMaterials={componentMaterials} selected={selected} hiddenParts={hiddenParts} miniature/><rect x={box.x} y={box.y} width={box.width} height={box.height} fill="#2499ff22" stroke="#51baff" strokeWidth="8"/></svg><span>Full-chip locator</span>
       </button>}
     </div>
-    <div className="layout-canvas-status"><span>{inspection?inspection.explanation:'Illustrative geometry · Double-click a part to inspect · 100% fits the whole chip'}</span><span className="layout-layer-key"><i/>Metal <i/>Junction <i/>Substrate</span></div>
+    <div className="layout-material-legend" aria-label="Layout material legend">
+      {(['capacitor','ground','substrate','junction'] as PartId[]).filter(part=>!hiddenParts.includes(part)).map(part=><button key={part} aria-pressed={selected===part} onClick={()=>onSelect(part)}><i style={{background:layerColors?INSPECTION_LAYER_COLORS[part]:resolveMaterial(componentMaterials[part]).color}}/>{part==='capacitor'?'Pads':part==='ground'?'Ground':part==='substrate'?'Die':'Junction'} · {resolveMaterial(componentMaterials[part]).formula}</button>)}
+      {!hiddenParts.includes('ground')&&<span className="layout-bond-count">{BOND_COUNT*4} bonds</span>}
+    </div>
+    <div className="layout-canvas-status"><span>{inspection?inspection.explanation:'Illustrative geometry · Double-click a part to inspect · 100% fits the whole chip'}</span></div>
   </section>;
 }

@@ -15,7 +15,7 @@ export function placeInspectionLabels(labels: InspectionLabel[], box: LabelRect,
     const [px,py] = inspectionPoint(...label.anchor);
     const ax=(px-box.x)/box.width*size.width, ay=(py-box.y)/box.height*size.height;
     if(ax<0||ax>size.width||ay<0||ay>size.height)continue;
-    const width=Math.min(size.width-20,label.text.length*6.5+20),height=27;
+    const width=Math.min(size.width-20,label.text.length*6.05+18),height=24;
     if(width<80||size.height<60)continue;
     const preferred={x:ax+label.offset[0],y:ay+label.offset[1]};
     const positions=[preferred];

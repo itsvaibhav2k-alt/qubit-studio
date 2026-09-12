@@ -17,6 +17,7 @@ import { HardwareContext } from './HardwareContext';
 import { resolveMaterial, type ComponentMaterials } from '@/lib/component-materials';
 import './layout.css';
 import './product.css';
+import './inspection.css';
 
 interface Props {
   mode:'explore'|'design'; onMode:(mode:'explore'|'design')=>void;
