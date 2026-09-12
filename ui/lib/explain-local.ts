@@ -100,7 +100,7 @@ function brief(
     case 'regime':
       return `${typicalRatio(ratio)} Koch et al. introduced the transmon specifically so that exponential charge-noise suppression beats the modest loss of anharmonicity.\nIf you need more $|\\alpha|$, you pay for it with a lower ratio and a louder charge curve.`;
     case 'ncut':
-      return `$\\mathrm{ncut}=${p.ncut}$ truncates the charge basis to $n\\in[-\\mathrm{ncut},+\\mathrm{ncut}]$. It is a numerical cutoff, not a lithography step.\n$30$ is enough for a typical transmon; if $E_J/E_C$ is very large and levels look unstable, raise it to check convergence before trusting $f_{01}$.`;
+      return `$n_{\\mathrm{cut}}=${p.ncut}$ truncates the charge basis to $n\\in[-n_{\\mathrm{cut}},+n_{\\mathrm{cut}}]$. It is a numerical cutoff, not a lithography step.\n$30$ is enough for a typical transmon; if $E_J/E_C$ is very large and levels look unstable, raise it to check convergence before trusting $f_{01}$.`;
     case 'materials': {
       const assignments = snapshot.rendered_component_materials;
       const rendered = assignments ? Object.entries(assignments).map(([part, id]) => {
@@ -127,7 +127,7 @@ function brief(
     case 'stress':
       return `Robustness wiggles $E_J$ and $E_C$ by a few percent to mimic junction-area and pad-size scatter.\nWatch $f_{01}$ span and dispersion: if they blow past your goals, the chosen hypothetical variation leaves the goal region. This is not a yield model.`;
     case 'tunable':
-      return `A flux-tunable transmon replaces one junction with a SQUID, so $E_J^\\mathrm{eff}(\\Phi)=E_{J\\Sigma}\\cos(\\pi\\Phi/\\Phi_0)\\sqrt{1+d^2\\tan^2(\\pi\\Phi/\\Phi_0)}$.\nThat Hamiltonian is separate from the isolated transmon on the 3D chip. Changing flux here does not rewrite the main $E_J$ slider.`;
+      return `A flux-tunable transmon replaces one junction with a SQUID. The engine uses $E_J^{\\mathrm{eff}}=E_{J\\mathrm{max}}\\sqrt{\\cos^{2}(\\pi\\Phi/\\Phi_0)+d^{2}\\sin^{2}(\\pi\\Phi/\\Phi_0)}$, matching scqubits' TunableTransmon (always $\\ge 0$).\nThat Hamiltonian is separate from the isolated transmon on the 3D chip. Changing flux here does not rewrite the main $E_J$ slider.`;
     case 'model':
       return `This is Koch’s isolated transmon in scqubits: charge-basis Hamiltonian with inputs $E_J,E_C,n_g$. Outputs $f_{01}$, $\\alpha$, dispersion.\nNo readout resonator, no Purcell, no $T_1$. Treat numbers as trends for intuition, not as a tapeout.`;
     default:

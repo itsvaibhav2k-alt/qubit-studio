@@ -2,7 +2,7 @@
 import { useCallback, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import { Blocks, Box, ChevronDown, CircuitBoard, Columns2, RotateCcw, SlidersHorizontal, Sparkles } from 'lucide-react';
 import GuidedTour from '@/components/GuidedTour';
-import MylaIcon from '@/components/MylaIcon';
+
 import { TOUR_STEPS } from '@/lib/guided-tour';
 import { PARTS, type PartId } from '@/lib/parts';
 import type Inspector from '@/components/Inspector';
@@ -26,10 +26,13 @@ interface Props {
   children:ReactNode; designTools?:ReactNode;
   componentMaterials:ComponentMaterials; onComponentMaterialChange:(part:PartId,material:string)=>void;
   renderQuality:'balanced'|'high'; onRenderQuality:(quality:'balanced'|'high')=>void;
+  onTourActive?: (active: boolean) => void;
+  onBuildChip?: () => void;
+  buildingChip?: boolean;
 }
 export default function LayoutWorkbench(props:Props) {
   const [tour,setTour]=useState<number|null>(null);
-  const closeTour=useCallback(()=>setTour(null),[]);
+  const closeTour=useCallback(()=>{ setTour(null); props.onTourActive?.(false); }, [props.onTourActive]);
   const [view,setView]=useState<'layout'|'3d'>('3d');
   const [split,setSplit]=useState(false);
   const [ratio,setRatio]=useState(50);
@@ -56,12 +59,20 @@ export default function LayoutWorkbench(props:Props) {
   };
   const goTour=(index:number)=>{
     const step=TOUR_STEPS[index]; if(!step)return;
-    setTour(index); props.onMode(step.tab==='experiment'?'design':'explore');
+    setTour(index); props.onTourActive?.(true); props.onMode(step.tab==='experiment'?'design':'explore');
     if(index===0)document.querySelector('.learning-menu')?.removeAttribute('open');
     if(step.part)inspector.onSelect(step.part);
     if(step.view==='3d'){setView('3d');setSplit(false);}
     if(step.view==='schematic'){setView('layout');setSplit(false);setCircuit(true);}
     if(step.view==='split')setSplit(true);
+  };
+  const startBuild=()=>{
+    setTour(null);
+    props.onTourActive?.(false);
+    document.querySelector('.learning-menu')?.removeAttribute('open');
+    setView('3d');
+    setSplit(false);
+    props.onBuildChip?.();
   };
   const candidateSource=session.chosenCandidate;
   const candidate=candidateSource&&session.search.snapshot?{ej_ghz:candidateSource.ej_ghz,ec_ghz:candidateSource.ec_ghz,ng:0,ncut:session.search.snapshot.params.ncut}:null;
@@ -73,10 +84,11 @@ export default function LayoutWorkbench(props:Props) {
     <header className="wave-header">
       <div className="wave-brand"><Blocks size={24} strokeWidth={1.8}/>Qubit Studio</div>
       <nav className="wave-modes" aria-label="Workspace mode">{(['explore','design'] as const).map(item=><button key={item} aria-pressed={mode===item} onClick={()=>props.onMode(item)}>{item==='explore'?'Explore':'Design'}</button>)}</nav>
-      <details className="layout-popover learning-menu"><summary>Design tools</summary><div>{props.designTools}<button type="button" onClick={()=>goTour(0)}>Guided learning</button></div></details>
+      <details className="layout-popover learning-menu"><summary>Design tools</summary><div>{props.designTools}<button type="button" onClick={()=>goTour(0)}>Learn</button><button type="button" onClick={startBuild}>Build chip</button></div></details>
       <span className="wave-device">Transmon / 01</span><span role="status" className={props.status.className}>{props.status.text}</span>
-      <button className="wave-tool-button" onClick={()=>goTour(0)}>Learn with Myla</button>
-      <button className="wave-tool-button" onClick={inspector.onAskLlm}><MylaIcon size={22}/>Ask Myla{inspector.selectedTopics.size>0?` (${inspector.selectedTopics.size})`:''}</button>
+      <button className="wave-tool-button" onClick={()=>goTour(0)}>Learn</button>
+      <button className="wave-tool-button" onClick={startBuild} aria-pressed={!!props.buildingChip}>Build chip</button>
+      <a className="wave-tool-button" href="/docs">Docs</a>
       <details className="layout-popover device-menu"><summary>Device <ChevronDown size={14}/></summary><div><label>Demo preset<select defaultValue="" disabled={mode==='design'} onChange={e=>{if(e.target.value)props.onPreset(e.target.value);e.target.value='';}}><option value="" disabled>Choose preset…</option><option value="default">Balanced default</option><option value="reference">scqubits reference</option><option value="protected">Low charge sensitivity</option><option value="anharmonic">High anharmonicity</option></select></label><button disabled={props.atDefaults||mode==='design'} onClick={props.onResetParams}>Reset all parameters</button></div></details>
     </header>
     <div className="wave-toolbar">

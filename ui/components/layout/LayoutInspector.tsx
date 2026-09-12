@@ -45,11 +45,6 @@ export default function LayoutInspector(props: Props) {
   const alternative = candidate && recommended && (candidate.ej_ghz !== recommended.ej_ghz || candidate.ec_ghz !== recommended.ec_ghz || candidate.ng !== recommended.ng);
   const inspectedParams = readOnly && candidate ? candidate : params;
   return <div className="layout-inspector">
-    <section className="layout-editor" aria-label="Myla explanations">
-      <h2>Understand with Myla</h2>
-      <p className="layout-component-role">Select a part, number or graph, then ask what it means.</p>
-      <button className="btn primary" onClick={props.onAskLlm}>Ask Myla{props.selectedTopics.size?` (${props.selectedTopics.size} selected)`:''}</button>
-    </section>
     <section className="layout-editor" aria-label="Selected component inspector">
       <div className="layout-component-id">{text?.id ?? 'SELECT A COMPONENT'}</div>
       <h1>{text?.name ?? 'Explore the chip'}</h1>
@@ -66,7 +61,6 @@ export default function LayoutInspector(props: Props) {
         <p>EJ/h {num(inspectedParams.ej_ghz,2)} GHz · EC/h {num(inspectedParams.ec_ghz,3)} GHz · ng {num(inspectedParams.ng,3)}</p>
         <details className="tech"><summary>Materials & sensitivity</summary><MaterialSensitivity onAsk={props.onSelectTopic} session={props.session} params={params} result={result} onApply={props.onApplyMaterialScenario} onMaterialsChange={props.onMaterialsChange} topMaterial={props.materials.topMaterial} baseMaterial={props.materials.baseMaterial}/></details>
         <details className="tech"><summary>Explanation topics</summary><div className="row-actions">{TOPIC_IDS.map(id => <button type="button" className="btn" key={id} aria-pressed={props.selectedTopics.has(id)} onClick={() => props.onSelectTopic(id)}>{TOPICS[id].label}</button>)}</div></details>
-        <div className="row-actions"><button className="btn" disabled={props.selectedTopics.size===0} onClick={props.onAskLlm}>Ask AI about selection ({props.selectedTopics.size})</button><button className="btn" disabled={props.selectedTopics.size===0} onClick={props.onClearTopics}>Clear AI selection</button></div>
       </div></details></div>
     </section>
     {!readOnly && <GeometryEditor key={`${params.ej_ghz}-${params.ec_ghz}`} params={params} onApply={(ej_ghz, ec_ghz) => props.onApplyMaterialScenario({ ...params, ej_ghz, ec_ghz })} />}

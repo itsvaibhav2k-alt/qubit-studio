@@ -28,6 +28,8 @@
 .product-shell .layout-popover>summary { border-color: #dadddc; border-radius: 6px; }
 .product-shell .wave-tool-button:hover,
 .product-shell .layout-popover>summary:hover { background: #f0f2f3; color: #253339; }
+.product-shell .wave-header .wave-tool-button[aria-pressed=true] { background: #edf1fb; color: #386bd6; }
+.product-shell .wave-header a.wave-tool-button { text-decoration: none; }
 .product-shell .wave-view-switch { border-color: #dadddc; border-radius: 6px; padding: 2px; background: #f3f4f3; gap: 2px; }
 .product-shell .wave-view-switch button { font-size: 12px; border-radius: 4px; padding: 6px 17px; min-width: 72px; color: #637077; background: none; }
 .product-shell .wave-view-switch button[aria-pressed=true] { background: #fff; color: #253339; box-shadow: 0 1px 4px #25333920; }

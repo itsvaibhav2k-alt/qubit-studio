@@ -13,7 +13,7 @@ export default function LayoutResults(props: Props) {
   const dispersion=dispersionDisplay(result), pinnedDispersion=dispersionDisplay(baseline);
   const metrics: Array<{id:TopicId; label:string; value:string; pinned:string; difference:string|null; note?:string}>=[
     {id:'f01',label:'Transition frequency · f01',value:result?`${num(result.f01_ghz,3)} GHz`:'—',pinned:baseline?`${num(baseline.f01_ghz,3)} GHz`:'—',difference:delta(result?.f01_ghz,baseline?.f01_ghz,3,'GHz')?.text??null},
-    {id:'alpha',label:'Transition-spacing difference · A',value:result?`${num(result.anharmonicity_mhz,1)} MHz`:'—',pinned:baseline?`${num(baseline.anharmonicity_mhz,1)} MHz`:'—',difference:delta(result?.anharmonicity_mhz,baseline?.anharmonicity_mhz,1,'MHz')?.text??null},
+    {id:'alpha',label:'Anharmonicity · |α|',value:result?`${num(result.anharmonicity_mhz,1)} MHz`:'—',pinned:baseline?`${num(baseline.anharmonicity_mhz,1)} MHz`:'—',difference:delta(result?.anharmonicity_mhz,baseline?.anharmonicity_mhz,1,'MHz')?.text??null},
     {id:'dispersion',label:'Charge dispersion',value:dispersion.text,pinned:pinnedDispersion.text,difference:dispersion.resolved&&pinnedDispersion.resolved?(delta(result?.dispersion_khz,baseline?.dispersion_khz,3,'kHz')?.text??null):null,note:dispersion.note},
   ];
   return <div className="layout-results">

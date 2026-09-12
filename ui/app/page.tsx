@@ -5,15 +5,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import SavedDesigns from '@/components/SavedDesigns';
 import type { ShareableDesign } from '@/lib/design-link';
 import AskLlm from '@/components/AskLlm';
+import BuildWorkshop from '@/components/BuildWorkshop';
 import LayoutWorkbench from '@/components/layout/LayoutWorkbench';
 import type { ViewportHandle } from '@/components/Viewport3D';
+import {
+  workshopHidden,
+  workshopParams,
+  WORKSHOP_STEPS,
+  type WorkshopChoices,
+} from '@/lib/build-workshop';
 import { topicFromPart, type TopicId } from '@/lib/explain-topics';
 import { buildChipSnapshot } from '@/lib/insight-snapshot';
 import { DEFAULT_PARAMS, clampParam, sameParams } from '@/lib/params';
 import type { ParamKey } from '@/lib/params';
 import type { PartId } from '@/lib/parts';
 import { useEvaluate } from '@/lib/useEvaluate';
-import { useExplain } from '@/lib/useExplain';
 import type { DesignGoals, DeviceParams, DeviceResult } from '@/lib/types';
 import { materialColor } from '@/lib/material-colors';
 import type { MaterialAppearance } from '@/lib/material-colors';
@@ -61,9 +67,14 @@ export default function Page() {
     baseColor: materialColor('Si'),
   });
 
-  // AI feature state
   const [selectedTopics, setSelectedTopics] = useState<Set<TopicId>>(new Set());
   const [llmOpen, setLlmOpen] = useState(false);
+  const [mylaAnchor, setMylaAnchor] = useState({ x: 24, y: 72 });
+  const lastClick = useRef({ x: 24, y: 72 });
+  const tourActiveRef = useRef(false);
+  const workshopActiveRef = useRef(false);
+  const [workshopIndex, setWorkshopIndex] = useState<number | null>(null);
+  const [workshopChoices, setWorkshopChoices] = useState<WorkshopChoices>({});
 
   const viewportRef = useRef<ViewportHandle | null>(null);
 
@@ -91,7 +102,6 @@ export default function Page() {
   );
 
   const topicsArray = useMemo(() => Array.from(selectedTopics), [selectedTopics]);
-  const explain = useExplain(snapshot, topicsArray);
 
   const restoreDesign = useCallback((design: ShareableDesign) => {
     if (!validDeviceParams(design.params) || !validExperimentGoals(design.goals)) return;
@@ -132,40 +142,48 @@ export default function Page() {
     setSelectedTopics(current => new Set([...current, 'materials']));
   }, [updateComponentMaterials]);
 
-  const onSelectTopic = useCallback((id: TopicId) => {
-    setSelectedTopics((current) => {
-      const next = new Set(current);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
+  useEffect(() => {
+    const track = (event: PointerEvent) => {
+      lastClick.current = { x: event.clientX, y: event.clientY };
+    };
+    window.addEventListener('pointerdown', track, true);
+    return () => window.removeEventListener('pointerdown', track, true);
   }, []);
+
+  const askAbout = useCallback((id: TopicId) => {
+    if (tourActiveRef.current || workshopActiveRef.current) return;
+    setSelectedTopics(new Set([id]));
+    setMylaAnchor(lastClick.current);
+    setLlmOpen(true);
+  }, []);
+
+  const onSelectTopic = askAbout;
 
   const clearTopics = useCallback(() => {
     setSelectedTopics(new Set());
   }, []);
 
   const triggerAskLlm = useCallback(() => {
-    if (selectedTopics.size === 0) setSelectedTopics(new Set(['f01']));
+    if (tourActiveRef.current || workshopActiveRef.current) return;
+    const id = topicsArray[0] ?? 'f01';
+    setSelectedTopics(new Set([id]));
+    setMylaAnchor(lastClick.current);
     setLlmOpen(true);
-  }, [selectedTopics.size]);
+  }, [topicsArray]);
 
   const selectPart = useCallback((id: PartId) => {
     setSelected(id);
-    // Auto-add the part's associated topic to the selection
-    const next = topicFromPart(id);
-    if (next) {
-      setSelectedTopics((current) => new Set(current).add(next));
+    if (!workshopActiveRef.current) {
+      setHiddenParts((current) => current.filter((part) => part !== id));
     }
-    setHiddenParts((current) => current.filter((part) => part !== id));
-  }, []);
+    const next = topicFromPart(id);
+    if (next) askAbout(next);
+  }, [askAbout]);
 
   const clearSelection = useCallback(() => setSelected(null), []);
 
   const toggleVisible = useCallback((id: PartId) => {
+    if (workshopActiveRef.current) return;
     setHiddenParts((current) =>
       current.includes(id) ? current.filter((p) => p !== id) : [...current, id],
     );
@@ -193,6 +211,68 @@ export default function Page() {
         ? { className: 'badge live', text: 'Live result' }
         : { className: 'badge', text: 'Calculating…' };
 
+  const applyWorkshopScene = useCallback((index: number, choices: WorkshopChoices) => {
+    const step = WORKSHOP_STEPS[index];
+    if (!step) return;
+    setMode('explore');
+    setHiddenParts(workshopHidden(index));
+    if (choices.assembled === true) setExplode(0);
+    else if (choices.assembled === false) setExplode(1);
+    else if (step.explode !== undefined) setExplode(step.explode);
+    if (step.part) setSelected(step.part);
+    setParams(workshopParams(choices));
+  }, []);
+
+  const startWorkshop = useCallback(() => {
+    workshopActiveRef.current = true;
+    tourActiveRef.current = true;
+    setLlmOpen(false);
+    setWorkshopChoices({});
+    setWorkshopIndex(0);
+    applyWorkshopScene(0, {});
+    setBaseline(null);
+    setMaterials({
+      topMaterial: 'Al',
+      baseMaterial: 'Si',
+      topColor: materialColor('Al'),
+      baseColor: materialColor('Si'),
+    });
+    updateComponentMaterials(() => ({ ...DEFAULT_COMPONENT_MATERIALS }));
+  }, [applyWorkshopScene, updateComponentMaterials]);
+
+  const stopWorkshop = useCallback(() => {
+    setWorkshopIndex(null);
+    workshopActiveRef.current = false;
+    tourActiveRef.current = false;
+    setHiddenParts([]);
+  }, []);
+
+  const chooseWorkshop = useCallback((apply: Partial<WorkshopChoices>) => {
+    const next = { ...workshopChoices, ...apply };
+    setWorkshopChoices(next);
+    applyWorkshopScene(workshopIndex ?? 0, next);
+    const metal = apply.metal;
+    const wafer = apply.wafer;
+    if (metal || wafer) {
+      setMaterials((materials) => {
+        const top = metal ?? materials.topMaterial;
+        const base = wafer ?? materials.baseMaterial;
+        return {
+          topMaterial: top,
+          baseMaterial: base,
+          topColor: materialColor(top),
+          baseColor: materialColor(base),
+        };
+      });
+      updateComponentMaterials((materials) => applyLayerMaterials(materials, metal, wafer));
+    }
+  }, [applyWorkshopScene, workshopChoices, workshopIndex, updateComponentMaterials]);
+
+  const goWorkshop = useCallback((index: number) => {
+    setWorkshopIndex(index);
+    applyWorkshopScene(index, workshopChoices);
+  }, [applyWorkshopScene, workshopChoices]);
+
   const exportReport = () => {
     const report = buildExportReport({ params, result, status, stale, goals, materials, componentMaterials, baseline, experiments: experiments.evidence });
     if (!report) return;
@@ -215,6 +295,16 @@ export default function Page() {
         mode={mode} onMode={setMode} status={statusBadge}
         componentMaterials={componentMaterials} onComponentMaterialChange={changeComponentMaterial}
         renderQuality={renderQuality} onRenderQuality={setRenderQuality}
+        onTourActive={(active) => {
+          if (active) {
+            setWorkshopIndex(null);
+            workshopActiveRef.current = false;
+            setLlmOpen(false);
+          }
+          tourActiveRef.current = active || workshopActiveRef.current;
+        }}
+        onBuildChip={startWorkshop}
+        buildingChip={workshopIndex !== null}
         hiddenParts={hiddenParts} onToggleVisible={toggleVisible}
         explode={explode} onExplode={setExplode} onReset3d={() => viewportRef.current?.resetView()}
         onExport={exportReport} canExport={canPin && validExperimentGoals(goals)}
@@ -238,7 +328,24 @@ export default function Page() {
           onSelect={selectPart} onClearSelection={clearSelection} active
           handleRef={viewportRef} materialColors={{}} materials={componentMaterials} renderQuality={renderQuality}/>
       </LayoutWorkbench>
-      <AskLlm open={llmOpen} onOpenChange={setLlmOpen} topics={topicsArray} snapshot={snapshot} explain={explain}/>
+      {workshopIndex !== null && (
+        <BuildWorkshop
+          index={workshopIndex}
+          choices={workshopChoices}
+          solverReady={canPin}
+          result={canPin ? result : null}
+          onChoose={chooseWorkshop}
+          onIndex={goWorkshop}
+          onClose={stopWorkshop}
+        />
+      )}
+      <AskLlm
+        open={llmOpen}
+        onOpenChange={setLlmOpen}
+        topics={topicsArray}
+        snapshot={snapshot}
+        anchor={mylaAnchor}
+      />
     </>
   );
 }

@@ -40,7 +40,7 @@ export const PARAMS: Record<ParamKey, ParamSpec> = {
     step: 0.005,
     fallback: 0.3,
     digits: 3,
-    meaning: 'Charging energy. The energy cost of putting one more Cooper pair on the island.',
+    meaning: 'Charging energy (e² / 2C). Adding one Cooper pair costs four times this value.',
   },
   ng: {
     key: 'ng',
