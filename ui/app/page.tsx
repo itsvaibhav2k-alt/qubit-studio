@@ -216,6 +216,7 @@ export default function Page() {
         componentMaterials={componentMaterials} onComponentMaterialChange={changeComponentMaterial}
         renderQuality={renderQuality} onRenderQuality={setRenderQuality}
         hiddenParts={hiddenParts} onToggleVisible={toggleVisible}
+        onRestoreInspectionView={(selection,hidden)=>{setSelected(selection);setHiddenParts(hidden);}}
         explode={explode} onExplode={setExplode} onReset3d={() => viewportRef.current?.resetView()}
         onExport={exportReport} canExport={canPin && validExperimentGoals(goals)}
         atDefaults={atDefaults}

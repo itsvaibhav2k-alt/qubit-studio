@@ -9,7 +9,7 @@ import { PARTS, type PartId } from '@/lib/parts';
 import type Inspector from '@/components/Inspector';
 import type ResultsDock from '@/components/ResultsDock';
 import LayoutViewport from './LayoutViewport';
-import { INITIAL_LAYOUT_VIEW, inspectPart, returnFromInspection, type PadFocus } from '@/lib/layout-inspection';
+import { INITIAL_LAYOUT_VIEW, inspectPart, returnFromInspection, type PadFocus, type LayoutViewState } from '@/lib/layout-inspection';
 import LayoutInspector from './LayoutInspector';
 import LayoutCircuit from './LayoutCircuit';
 import LayoutResults from './LayoutResults';
@@ -18,11 +18,16 @@ import { resolveMaterial, type ComponentMaterials } from '@/lib/component-materi
 import './layout.css';
 import './product.css';
 import './inspection.css';
+import './layer-artwork.css';
+import './display-controls.css';
+import { DEFAULT_LAYER_DISPLAY, type LayerDisplay } from '@/lib/layout-display';
+import type { SavedInspectionView } from './LayoutDisplayControls';
 
 interface Props {
   mode:'explore'|'design'; onMode:(mode:'explore'|'design')=>void;
   inspector:ComponentProps<typeof Inspector>; results:ComponentProps<typeof ResultsDock>;
   status:{className:string;text:string}; hiddenParts:PartId[]; onToggleVisible:(id:PartId)=>void;
+  onRestoreInspectionView:(selected:PartId|null,hiddenParts:PartId[])=>void;
   explode:number; onExplode:(value:number)=>void; onReset3d:()=>void;
   onExport:()=>void; canExport:boolean; onPreset:(name:string)=>void; onResetParams:()=>void; atDefaults:boolean;
   children:ReactNode; designTools?:ReactNode;
@@ -38,24 +43,50 @@ export default function LayoutWorkbench(props:Props) {
   const [circuit,setCircuit]=useState(false);
   const [annotations,setAnnotations]=useState(true);
   const [layoutView,setLayoutView]=useState(INITIAL_LAYOUT_VIEW);
+  const [layerDisplay,setLayerDisplay]=useState<LayerDisplay>({...DEFAULT_LAYER_DISPLAY});
+  const [layerColors,setLayerColors]=useState(false);
+  const [focus,setFocus]=useState<{part:PartId;previous:LayoutViewState;hiddenParts:PartId[];selected:PartId|null}|null>(null);
+  const [savedViews,setSavedViews]=useState<SavedInspectionView[]>([]);
   const [solverOpen,setSolverOpen]=useState(false);
   const aside=useRef<HTMLElement>(null),stage=useRef<HTMLElement>(null),panes=useRef<HTMLDivElement>(null);
   const {inspector,results,mode}=props;
   const {selected,params,session}=inspector;
   const show3d=split||view==='3d',showLayout=split||view==='layout';
+  const effectiveHidden=focus?PARTS.filter(part=>part.id!==focus.part).map(part=>part.id):props.hiddenParts;
+  const setPartVisible=(part:PartId,visible:boolean)=>{
+    const baseline=focus?.hiddenParts??props.hiddenParts;
+    const hidden=visible?baseline.filter(id=>id!==part):[...new Set([...baseline,part])];
+    setFocus(null);props.onRestoreInspectionView(selected,hidden);
+  };
   const filmIds = new Set([props.componentMaterials.capacitor, props.componentMaterials.junction, props.componentMaterials.gate, props.componentMaterials.ground]);
   const filmLabel = filmIds.size === 1 ? resolveMaterial(props.componentMaterials.capacitor).formula : 'Mixed films';
   const inspectionSize=()=>{const rect=stage.current?.querySelector('.layout-drawing')?.getBoundingClientRect();return {width:rect?.width||500,height:rect?.height||500};};
   const onSelect=(part:PartId)=>{
-    inspector.onSelect(part);aside.current?.scrollTo({top:0});
+    inspector.onSelect(part);setFocus(current=>current?{...current,part}:null);aside.current?.scrollTo({top:0});
     if(layoutView.inspecting&&layoutView.inspecting!==part){const {width,height}=inspectionSize();setLayoutView(current=>inspectPart(current,part,width,height));}
   };
   const openInspection=(part:PartId,focus:PadFocus='both')=>{
     // The fit needs the revealed pane's dimensions. Commit this layout change
     // before measuring instead of waiting behind a potentially expensive GPU frame.
     if(!showLayout)flushSync(()=>setSplit(true));
-    inspector.onSelect(part);aside.current?.scrollTo({top:0});
+    inspector.onSelect(part);setFocus(current=>current?{...current,part}:null);aside.current?.scrollTo({top:0});
     const {width,height}=inspectionSize();setLayoutView(current=>inspectPart(current,part,width,height,focus));
+  };
+  const restoreFocus=()=>{if(focus){setLayoutView(focus.previous);props.onRestoreInspectionView(focus.selected,focus.hiddenParts);}setFocus(null);};
+  const focusSelected=()=>{
+    if(focus){restoreFocus();return;}
+    if(!selected)return;
+    setFocus({part:selected,previous:layoutView,hiddenParts:[...props.hiddenParts],selected});
+    const {width,height}=inspectionSize();setLayoutView(current=>inspectPart(current,selected,width,height));
+  };
+  const saveView=(name:string)=>{
+    const snapshot:SavedInspectionView={name,view:structuredClone(layoutView),layerDisplay:{...layerDisplay},layerColors,hiddenParts:[...effectiveHidden],selected,annotations};
+    setSavedViews(current=>[...current.filter(item=>item.name!==name),snapshot]);
+  };
+  const applyView=(name:string)=>{
+    const snapshot=savedViews.find(item=>item.name===name);if(!snapshot)return;
+    setFocus(null);props.onRestoreInspectionView(snapshot.selected,[...snapshot.hiddenParts]);setLayoutView(structuredClone(snapshot.view));
+    setLayerDisplay({...snapshot.layerDisplay});setLayerColors(snapshot.layerColors);setAnnotations(snapshot.annotations);
   };
   const goTour=(index:number)=>{
     const step=TOUR_STEPS[index]; if(!step)return;
@@ -91,7 +122,7 @@ export default function LayoutWorkbench(props:Props) {
       <details className="layout-popover view-options"><summary><SlidersHorizontal size={17}/>View options <ChevronDown size={14}/></summary><div><strong>{split?'3D + Layout':showLayout?'Layout':'3D'}</strong>
         {showLayout&&<label><input type="checkbox" checked={annotations} onChange={e=>setAnnotations(e.target.checked)}/>Annotations</label>}
         <span className="options-hint">Visible components · shared across views</span>
-        {PARTS.map(part=><label key={part.id}><input type="checkbox" checked={!props.hiddenParts.includes(part.id)} onChange={()=>props.onToggleVisible(part.id)}/>{part.name}</label>)}
+        {PARTS.map(part=><label key={part.id}><input type="checkbox" checked={!effectiveHidden.includes(part.id)} onChange={event=>setPartVisible(part.id,event.target.checked)}/>{part.name}</label>)}
       </div></details>
     </div>
     <main ref={stage} className="wave-stage" aria-label={split?'Linked 3D and Layout workspace':showLayout?'Layout workspace':'3D workspace'}>
@@ -99,14 +130,14 @@ export default function LayoutWorkbench(props:Props) {
         <section className="product-hardware" hidden={!show3d} aria-label="3D chip pane">
           <div className="hardware-toolbar"><span>Device assembly</span><button className="hardware-quality" aria-label="High detail rendering" aria-pressed={props.renderQuality==='high'} title={props.renderQuality==='high'?'High detail: supersampled canvas and sharper lighting. Click for balanced performance.':'Balanced rendering. Click for high detail.'} onClick={()=>props.onRenderQuality(props.renderQuality==='high'?'balanced':'high')}><Sparkles size={12}/><span>High detail</span></button><div role="group" aria-label="Assembly state"><button aria-pressed={props.explode===0} onClick={()=>props.onExplode(0)}>Assembled</button><button aria-pressed={props.explode===1} onClick={()=>props.onExplode(1)}>Exploded</button></div><button className="hardware-reset" aria-label="Reset 3D view" title="Reset 3D view" onClick={props.onReset3d}><RotateCcw size={16}/></button></div>
           <div className="hardware-surface">
-            <HardwareContext.Provider value={{active:show3d,onSelect}}>{props.children}</HardwareContext.Provider>
+            <HardwareContext.Provider value={{active:show3d,onSelect,hiddenPartsOverride:effectiveHidden}}>{props.children}</HardwareContext.Provider>
             <div className="hardware-caption"><span>QS–01</span><strong>Transmon</strong><small>{filmLabel} / {resolveMaterial(props.componentMaterials.substrate).formula} · {props.explode===1?'Layer separation':'Packaged device'}</small></div>
           </div>
           {props.explode===1&&<div className="hardware-layer-materials" role="group" aria-label="Exploded component materials">{(['package','board','substrate','ground','capacitor','junction','gate'] as PartId[]).map(id=>{const material=resolveMaterial(props.componentMaterials[id]);return <button key={id} aria-pressed={selected===id} onClick={()=>onSelect(id)} title={`${PARTS.find(part=>part.id===id)?.name} · ${material.name}`}><i style={{backgroundColor:material.color}}/><span>{id==='capacitor'?'Pads':id==='package'?'Package':id==='board'?'Carrier':id[0].toUpperCase()+id.slice(1)}</span><strong>{material.formula}</strong></button>;})}</div>}
           <div className="hardware-status">Drag to orbit · scroll to zoom <span>Illustrative assembly</span></div>
         </section>
         {split&&<div className="product-divider" role="separator" tabIndex={0} aria-label="Resize 3D and Layout panes" aria-orientation="vertical" aria-valuemin={35} aria-valuemax={65} aria-valuenow={Math.round(ratio)} onDoubleClick={()=>setRatio(50)} onKeyDown={event=>{if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();setRatio(current=>Math.max(35,Math.min(65,current+(event.key==='ArrowLeft'?-5:5))));}}} onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);resize(event.clientX);}} onPointerMove={event=>{if(event.currentTarget.hasPointerCapture(event.pointerId))resize(event.clientX);}} onPointerUp={event=>event.currentTarget.releasePointerCapture(event.pointerId)}/>}
-        <section className="wave-renderer product-layout" hidden={!showLayout} aria-label="Planar layout pane"><LayoutViewport componentMaterials={props.componentMaterials} selected={selected} hiddenParts={props.hiddenParts} onSelect={onSelect} onInspect={openInspection} annotations={annotations} viewState={layoutView} onViewState={setLayoutView}/></section>
+        <section className="wave-renderer product-layout" hidden={!showLayout} aria-label="Planar layout pane"><LayoutViewport componentMaterials={props.componentMaterials} selected={selected} hiddenParts={effectiveHidden} onSelect={onSelect} onInspect={openInspection} annotations={annotations} viewState={layoutView} onViewState={setLayoutView} layerDisplay={layerDisplay} onLayerDisplay={setLayerDisplay} layerColors={layerColors} onLayerColors={setLayerColors} onSetVisible={setPartVisible} focusedPart={focus?.part??null} onFocus={focusSelected} onRestoreFocus={restoreFocus} savedViews={savedViews} onSaveView={saveView} onApplyView={applyView}/></section>
       </div>
       {circuit&&<div id="wave-circuit"><LayoutCircuit params={params} selected={selected} onSelect={onSelect}/></div>}
     </main>

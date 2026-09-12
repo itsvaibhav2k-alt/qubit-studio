@@ -1,6 +1,6 @@
 import { inspectionPoint, PLAN_ASPECT } from './chip-detail.ts';
 import type { PartId } from './parts';
-import { boundedCamera, JUNCTION_CAMERA, layoutViewBox, OVERVIEW_CAMERA, type LayoutCamera } from './layout-geometry.ts';
+import { boundedCamera, layoutViewBox, OVERVIEW_CAMERA, type LayoutCamera } from './layout-geometry.ts';
 
 export type PadFocus = 'both' | 'left' | 'right';
 export interface LayoutViewState {
@@ -14,8 +14,8 @@ export const INITIAL_LAYOUT_VIEW: LayoutViewState = { camera: OVERVIEW_CAMERA, b
 export const INSPECTIONS: Record<PartId, { title: string; action: string; explanation: string; region: [number,number,number,number]; labels: InspectionLabel[] }> = {
   board:{title:'Carrier board detail',action:'Inspect carrier board',region:[220,150,320,260],explanation:'The carrier and contacts support the chip. This is illustrated packaging context, not an additional circuit.',labels:[{text:'Carrier board',part:'board',anchor:[145,250],offset:[10,-55]}]},
   package:{title:'Package detail',action:'Inspect package',region:[250,155,380,310],explanation:'This view inspects the shield aperture and bond lands around the die. The 3D assembly shows the wider package and mounting hardware.',labels:[{text:'Package aperture',part:'package',anchor:[95,190],offset:[30,30]}]},
-  junction: {title:'Junction detail',action:'Inspect junction',region:[500,310,270,180],explanation:'Metal opening exposes the continuous substrate; it is not a through-hole.',labels:[
-    {text:'Electrode',part:'capacitor',anchor:[397,290],offset:[-45,-65]},
+  junction: {title:'Junction detail',action:'Inspect junction',region:[500,310,100/PLAN_ASPECT,70],explanation:'Metal opening exposes the continuous substrate; it is not a through-hole.',labels:[
+    {text:'Electrode',part:'capacitor',anchor:[436,300],offset:[-45,-65]},
     {text:'JJ1 · Josephson junction',part:'junction',anchor:[500,310],offset:[30,-95]},
     {text:'Junction overlap',part:'junction',anchor:[500,312],offset:[-100,80]},
     {text:'Exposed substrate · metal opening',part:'substrate',anchor:[536,325],offset:[55,72]},
@@ -49,7 +49,7 @@ export function inspectPart(view: LayoutViewState, part: PartId, width: number, 
   const [x] = inspectionPoint(legacyX,y);
   const w = legacyWidth * PLAN_ASPECT;
   const fit=layoutViewBox(width,height,OVERVIEW_CAMERA);
-  const camera = part==='junction' ? {...JUNCTION_CAMERA} : boundedCamera({x,y,zoom:Math.min(fit.width/w,fit.height/h)});
+  const camera = boundedCamera({x,y,zoom:Math.min(fit.width/w,fit.height/h)});
   return {camera,beforeInspection:view.beforeInspection??{...view.camera},inspecting:part,padFocus};
 }
 export function returnFromInspection(view: LayoutViewState): LayoutViewState {
