@@ -324,7 +324,12 @@ async function pageExportChecks(){
     const initial=await next('/api/evaluate','actual Page initial evaluation');
     assert(sameParams(initial.body,fixtures.default),'Actual Page starts at documented default parameters');
     answer(initial,fixtures.default);await until(()=>!exportedButton().disabled,'Page export enabled');
-    clickText('Save baseline');clickText('Try a goal');
+    const pad=document.querySelector('.layout-scene [data-part=capacitor]') as SVGElement;
+    flushSync(()=>pad.dispatchEvent(new MouseEvent('click',{bubbles:true})));
+    assert(document.querySelectorAll('.layout-scene [data-part=capacitor].is-selected').length===2,'Both pads share selection');
+    clickText('Inspect capacitor pads');clickText('Right pad');
+    assert(document.querySelector('.layout-inspection-caption')?.textContent?.includes('Capacitor'),'Actual Page opens capacitor inspection');
+    clickText('Return to full chip');clickText('Pin baseline');clickText('Design');
     const stressDetails=[...document.querySelectorAll('summary')].find(el=>el.textContent?.trim()==='How robust is this design?');
     assert(stressDetails,'Actual robustness disclosure exists');flushSync(()=>stressDetails!.click());
     clickText('Test robustness');const stress=await next('/api/stress','actual Page stress');
@@ -334,13 +339,17 @@ async function pageExportChecks(){
     assert(sameParams(first.parameters,fixtures.default) && sameParams(first.result,fixtures.default),'Exported JSON parameters match exact producing result');
     assert(sameParams(first.pinned_baseline,fixtures.default),'Export includes frozen baseline coordinates');
     assert(first.experiments.length===1 && first.experiments[0].kind==='stress' && first.experiments[0].current===true,'Actual Page export includes fresh completed experiment provenance');
-    const preset=document.querySelector('.preset-control select') as HTMLSelectElement;
+    clickText('Explore');
+    const preset=document.querySelector('.device-menu select') as HTMLSelectElement;
     flushSync(()=>{preset.value='reference';preset.dispatchEvent(new Event('change',{bubbles:true}));});
     assert(exportedButton().disabled,'Actual export button disables in first pending edited frame');
     clickText('Export report');await pause();assert(exportedReports.length===1,'Disabled stale export emits no download');
     const reference=await next('/api/evaluate','actual Page reference calculation');
     answer(reference,fixtures.reference);await until(()=>!exportedButton().disabled,'reference completed');
-    clickText('Materials');
+    for(const label of ['More detail','Materials & sensitivity']) {
+      const disclosure=[...document.querySelectorAll('summary')].find(el=>el.textContent?.trim()===label);
+      assert(disclosure,`Actual ${label} disclosure exists`);flushSync(()=>disclosure!.click());
+    }
     const top=document.querySelector('.sandbox-pickers select') as HTMLSelectElement;
     assert(top,'Actual material picker exists');flushSync(()=>{top.value='Ta';top.dispatchEvent(new Event('change',{bubbles:true}));});
     clickText('Export report');await until(()=>exportedReports.length===2,'second actual download Blob captured');

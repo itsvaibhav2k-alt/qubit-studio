@@ -27,7 +27,7 @@ module.exports = async function build(output, negativeControl) {
         alias: { '@': ui, react: path.join(ui, 'node_modules/react'), 'react-dom': path.join(ui, 'node_modules/react-dom') },
         modules: [path.join(ui, 'node_modules'), 'node_modules'],
       },
-      module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: { loader: path.join(__dirname, 'ts-loader.cjs'), options: { negativeControl } } }] },
+      module: { rules: [{ test: /\.css$/, use: { loader: path.join(__dirname, 'css-loader.cjs') } }, { test: /\.tsx?$/, exclude: /node_modules/, use: { loader: path.join(__dirname, 'ts-loader.cjs'), options: { negativeControl } } }] },
     });
     compiler.run((error, stats) => {
       if (stats) fs.writeFileSync(path.join(output, 'build.log'), stats.toString({ colors: false, all: false, errors: true, warnings: true }));

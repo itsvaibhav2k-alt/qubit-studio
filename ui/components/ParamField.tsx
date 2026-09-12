@@ -8,11 +8,14 @@ interface ParamFieldProps {
   paramKey: ParamKey;
   value: number;
   onChange: (key: ParamKey, value: number) => void;
+  disabled?: boolean;
+  label?: string;
 }
 
 /** Slider plus exact numeric entry. Out-of-range text is rejected, not silently clamped. */
-export default function ParamField({ paramKey, value, onChange }: ParamFieldProps) {
+export default function ParamField({ paramKey, value, onChange, disabled = false, label }: ParamFieldProps) {
   const spec = PARAMS[paramKey];
+  const displayLabel = label ?? spec.label;
   const [text, setText] = useState(value.toFixed(spec.digits));
   const [invalid, setInvalid] = useState<string | null>(null);
   const [syncedValue, setSyncedValue] = useState(value);
@@ -25,6 +28,7 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
   }
 
   const commitText = (raw: string) => {
+    if (disabled) return;
     setText(raw);
     const parsed = Number(raw);
     if (raw.trim() === '' || !Number.isFinite(parsed)) {
@@ -51,13 +55,13 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
   return (
     <div className="field">
       <div className="field-head">
-        <label htmlFor={`p-${paramKey}`}>{spec.label}</label>
+        <label htmlFor={`p-${paramKey}`}>{displayLabel}</label>
         <span className="sym">{spec.symbol}</span>
         <button
           type="button"
           className="reset"
           onClick={() => onChange(paramKey, spec.fallback)}
-          disabled={atDefault}
+          disabled={disabled || atDefault}
           style={atDefault ? { color: 'var(--text-3)', cursor: 'default' } : undefined}
         >
           reset
@@ -67,6 +71,7 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
         <input
           id={`p-${paramKey}`}
           type="range"
+          disabled={disabled}
           min={spec.min}
           max={spec.max}
           step={spec.step}
@@ -75,9 +80,10 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
         />
         <input
           className="num"
+          disabled={disabled}
           type="text"
           inputMode="decimal"
-          aria-label={`${spec.label} exact value`}
+          aria-label={`${displayLabel} exact value`}
           aria-invalid={invalid ? 'true' : 'false'}
           aria-describedby={invalid ? `p-${paramKey}-error` : undefined}
           value={text}

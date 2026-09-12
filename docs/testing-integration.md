@@ -51,7 +51,7 @@ run `./node_modules/.bin/next typegen` in `ui`, then `npm run typecheck`.
 
 | Tier | Command | What actually executes |
 | --- | --- | --- |
-| Frontend unit/contract | `cd ui && npm test` | Existing `ui/lib/*.test.ts` through Node's test runner; currently 60 tests. The wrapper rejects zero tests, skipped tests, TODOs, or failures and writes TAP plus a summary. |
+| Frontend unit/contract | `cd ui && npm test` | Existing `ui/lib/*.test.ts` through Node's test runner; currently 64 tests. The wrapper rejects zero tests, skipped tests, TODOs, or failures and writes TAP plus a summary. |
 | Static/build | `cd ui && npm run lint`; `npm run build`; `npm run typecheck` | ESLint on the frontend, production compilation, and TypeScript over the actual application. `npm run check` orders these for clean checkout use. |
 | React/browser | `cd ui && npm run test:browser` | 16 grouped journeys mounting the actual Page, Inspector, DesignLab, MaterialSensitivity, AskLlm and hooks in React StrictMode with installed ReactDOM and Chromium. |
 | Python | `MPLBACKEND=Agg .venv/bin/python qa/run-python.py` | Real simulation and in-process API tests; currently 17. The wrapper requires nonzero execution, no skips, no errors, and writes JUnit plus a summary. |
@@ -250,3 +250,9 @@ Runtime/setup references: [Node release support](https://github.com/nodejs/Relea
 [Playwright browser installation](https://playwright.dev/docs/browsers),
 [Playwright CI setup](https://playwright.dev/docs/ci), and
 [setup-node runtime inputs](https://github.com/actions/setup-node).
+
+## Layout interface follow-up
+
+The actual Page journey uses the Layout shell: shared pad selection, capacitor inspection, Pin baseline, Design, the Device preset menu in Explore, and the material disclosures. Existing producing-result, frozen-baseline, stale-export and experiment-provenance assertions remain unchanged. The standalone browser bundle injects imported component CSS through `qa/browser/css-loader.cjs`; it still mounts the production components without stubs.
+
+Four Layout unit tests cover whole-chip fitting, zoom semantics, inspection framing, and preserving the original return camera across part and pad-focus changes.

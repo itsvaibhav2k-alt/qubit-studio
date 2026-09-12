@@ -17,6 +17,7 @@ interface ResultsDockProps {
   goals: DesignGoals;
   selectedTopics: Set<TopicId>;
   onSelectTopic: (id: TopicId) => void;
+  goalHint?: string;
 }
 
 interface MetricProps {
@@ -164,6 +165,7 @@ export default function ResultsDock({
   goals,
   selectedTopics,
   onSelectTopic,
+  goalHint = 'Open “Try a goal” on the right and let the app find settings that pass.',
 }: ResultsDockProps) {
   const dispersion = dispersionDisplay(result);
   const baselineDispersion = baseline ? dispersionDisplay(baseline) : null;
@@ -221,7 +223,7 @@ export default function ResultsDock({
             <strong>{passing === checks.length ? 'This design passes your goals' : `This design passes ${passing} of ${checks.length} goals`}</strong>
             <span>{passing === checks.length
               ? 'This completed calculation meets your selected frequency, level-separation, and charge-sensitivity thresholds.'
-              : 'Open “Try a goal” on the right and let the app find settings that pass.'}</span>
+              : goalHint}</span>
           </div>
           <div className="verdict-checks">
             {checks.map((check) => <span key={check.label} className={`pill ${check.pass ? 'ok' : 'no'}`} title={check.detail}>{check.pass ? '✓' : '×'} {check.label}</span>)}
