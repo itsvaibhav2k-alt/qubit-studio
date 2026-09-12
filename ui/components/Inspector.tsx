@@ -1,5 +1,6 @@
 'use client';
 
+import GeometryEditor from './GeometryEditor';
 import { useState } from 'react';
 import ParamField from './ParamField';
 import MaterialSensitivity from './MaterialSensitivity';
@@ -11,6 +12,8 @@ import type { ParamKey } from '@/lib/params';
 import { num } from '@/lib/format';
 import type { DesignGoals, DeviceParams, DeviceResult } from '@/lib/types';
 import type { MaterialAppearance } from '@/lib/material-colors';
+import { TOPICS, type TopicId } from '@/lib/explain-topics';
+import type { ExperimentSession } from '@/lib/useExperimentSession';
 
 interface InspectorProps {
   selected: PartId | null;
@@ -18,17 +21,23 @@ interface InspectorProps {
   result: DeviceResult | null;
   onSelect: (id: PartId) => void;
   onChange: (key: ParamKey, value: number) => void;
-  onApplyMaterialScenario: (ejGhz: number, ecGhz: number) => void;
+  onApplyMaterialScenario: (params: DeviceParams) => void;
+  session: ExperimentSession;
   goals: DesignGoals;
   onGoalsChange: (goals: DesignGoals) => void;
   onMaterialsChange: (topMaterial: string, baseMaterial: string) => void;
   materials: MaterialAppearance;
+  selectedTopics: Set<TopicId>;
+  onSelectTopic: (id: TopicId) => void;
+  onClearTopics: () => void;
+  onAskLlm: () => void;
 }
 
 export default function Inspector({
   selected,
   params,
   result,
+  session,
   onSelect,
   onChange,
   onApplyMaterialScenario,
@@ -36,9 +45,13 @@ export default function Inspector({
   onGoalsChange,
   onMaterialsChange,
   materials,
+  selectedTopics,
+  onSelectTopic,
+  onClearTopics,
+  onAskLlm,
 }: InspectorProps) {
   const part = selected ? PART_BY_ID[selected] : null;
-  const [tab, setTab] = useState<'edit' | 'experiment' | 'materials'>('edit');
+  const [tab, setTab] = useState<'edit' | 'experiment' | 'materials' | 'ask'>('edit');
 
   return (
     <>
@@ -48,12 +61,19 @@ export default function Inspector({
           ['edit', 'Edit chip'],
           ['experiment', 'Try a goal'],
           ['materials', 'Materials'],
+          ['ask', `Ask AI${selectedTopics.size > 0 ? ` (${selectedTopics.size})` : ''}`],
         ] as const).map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
+          <button key={id} type="button" role="tab" id={`tab-${id}`} aria-controls="inspector-panel" tabIndex={tab === id ? 0 : -1} aria-selected={tab === id} onClick={() => setTab(id)} onKeyDown={(event) => {
+            const ids = ['edit', 'experiment', 'materials', 'ask'] as const;
+            const index = ids.indexOf(id);
+            const next = event.key === 'ArrowRight' ? ids[(index + 1) % ids.length] : event.key === 'ArrowLeft' ? ids[(index + ids.length - 1) % ids.length] : event.key === 'Home' ? ids[0] : event.key === 'End' ? ids[ids.length - 1] : null;
+            if (next) { event.preventDefault(); setTab(next); document.getElementById(`tab-${next}`)?.focus(); }
+          }}>
             {label}
           </button>
         ))}
       </div>
+      <div role="tabpanel" id="inspector-panel" aria-labelledby={`tab-${tab}`} tabIndex={0}>
 
       {tab === 'edit' && !part && (
         <div className="insp-section">
@@ -129,7 +149,9 @@ export default function Inspector({
       )}
 
       {tab === 'experiment' && <DesignLab
+          session={session}
           params={params}
+          result={result}
           goals={goals}
           onGoalsChange={onGoalsChange}
           onApply={onApplyMaterialScenario}
@@ -138,6 +160,7 @@ export default function Inspector({
         />}
 
       {tab === 'materials' && <MaterialSensitivity
+          session={session}
           params={params}
           result={result}
           onApply={onApplyMaterialScenario}
@@ -146,7 +169,52 @@ export default function Inspector({
           baseMaterial={materials.baseMaterial}
         />}
 
+      {tab === 'ask' && (
+        <div className="insp-section ask-ai-panel">
+          <div className="insp-title">Ask AI</div>
+          <p className="insp-role">
+            Click result metrics (or a 3D part), then ask Gemini to explain the live numbers.
+          </p>
+
+          {selectedTopics.size === 0 ? (
+            <p className="ask-ai-empty">Nothing selected yet.</p>
+          ) : (
+            <>
+              <div className="ask-ai-topics">
+                {Array.from(selectedTopics).map((t) => {
+                  const spec = TOPICS[t];
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      className="topic-badge"
+                      title="Click to deselect"
+                      onClick={() => onSelectTopic(t)}
+                    >
+                      <span className="topic-label">{spec?.label ?? t}</span>
+                      <span className="topic-sym">{spec?.symbol ?? ''}</span>
+                      <span className="topic-remove" aria-hidden>×</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="ask-ai-actions">
+                <button type="button" className="btn primary" onClick={onAskLlm}>
+                  Ask Gemini
+                </button>
+                <button type="button" className="btn" onClick={onClearTopics}>
+                  Clear all
+                </button>
+              </div>
+            </>
+          )}
+
+
+        </div>
+      )}
+
       {tab === 'edit' && <div className="insp-section quiet-section">
+          <GeometryEditor key={`${params.ej_ghz}-${params.ec_ghz}`} params={params} onApply={(ej_ghz, ec_ghz) => onApplyMaterialScenario({ ...params, ej_ghz, ec_ghz })} />
           <details className="tech">
             <summary>Advanced solver setting</summary>
             <div className="body">
@@ -159,6 +227,7 @@ export default function Inspector({
             guaranteed behavior of a manufactured chip.
           </p>
         </div>}
+      </div>
     </>
   );
 }

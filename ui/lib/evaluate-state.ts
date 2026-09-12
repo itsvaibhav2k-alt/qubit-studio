@@ -33,14 +33,15 @@ export function evalReducer(state: EvalState, event: EvalEvent): EvalState {
   switch (event.type) {
     case 'request':
       // Keep the previous result visible; the UI labels it as stale.
-      return { ...state, status: 'loading', seq: event.seq };
+      if (event.seq < state.seq) return state;
+      return { ...state, status: 'loading', seq: event.seq, error: null };
     case 'success':
       if (event.seq !== state.seq) return state;
       return { ...state, status: 'ready', appliedSeq: event.seq, result: event.result, error: null };
     case 'failure':
       if (event.seq !== state.seq) return state;
-      // Drop the numbers: a failed evaluate must not leave stale physics on screen.
-      return { ...state, status: 'error', appliedSeq: event.seq, result: null, error: event.error };
+      // Retain the last completed snapshot, explicitly outdated and unavailable to actions.
+      return { ...state, status: 'error', error: event.error };
     default:
       return state;
   }
@@ -48,5 +49,5 @@ export function evalReducer(state: EvalState, event: EvalEvent): EvalState {
 
 /** True when the displayed result no longer answers the newest request. */
 export function isStale(state: EvalState): boolean {
-  return state.status === 'loading' && state.appliedSeq !== state.seq;
+  return state.status !== 'ready' && state.result !== null;
 }

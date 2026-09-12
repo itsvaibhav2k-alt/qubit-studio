@@ -1,6 +1,6 @@
 import type { ParamKey } from './params';
 
-export type PartId = 'junction' | 'capacitor' | 'gate' | 'substrate' | 'ground';
+export type PartId = 'junction' | 'capacitor' | 'gate' | 'substrate' | 'ground' | 'board' | 'package';
 
 export interface Part {
   id: PartId;
@@ -13,6 +13,8 @@ export interface Part {
 }
 
 export const PARTS: Part[] = [
+  {id:'board',name:'Carrier board',role:'The board and contacts supporting the chip. Visual context only.',modeled:false,color:'#1f3b48'},
+  {id:'package',name:'Package & clamps',role:'The mechanical frame and clamps around the device. Visual context only.',modeled:false,color:'#b8955a'},
   {
     id: 'junction',
     name: 'Josephson junction',

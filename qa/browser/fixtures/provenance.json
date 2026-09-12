@@ -1,0 +1,9 @@
+{
+  "purpose": "Numerical fixtures for controlled React wiring tests, not live solver verification.",
+  "origin": "Verified cleanup React wiring package; original solver payloads preserved byte-for-byte.",
+  "sha256": {
+    "simulation/engine.py": "c31a6e1cbde411bfbe6a0a7adb2d4055355646c6b5219c9b83fcce2dbc9ddfe3",
+    "simulation/requirements.txt": "a91e5ae305ca3caab667a783b03d3fca381166ade38a5b362491290caf3c1ecf",
+    "qa/browser/fixtures/solver.json": "64949fea5ee66680561f0468e5632abc20a9eb3d8f231a88b539a67a74506d92"
+  }
+}

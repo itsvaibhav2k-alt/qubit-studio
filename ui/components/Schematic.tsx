@@ -1,6 +1,7 @@
 'use client';
 
 import { PARTS } from '@/lib/parts';
+import MathText from '@/components/MathText';
 import type { PartId } from '@/lib/parts';
 import { num } from '@/lib/format';
 import type { DeviceParams } from '@/lib/types';
@@ -118,9 +119,9 @@ export default function Schematic({
           <text x="168" y="118" fontSize="11" textAnchor="end" fill={labelFill('junction')} fontWeight={selected === 'junction' ? 600 : 400}>
             junction
           </text>
-          <text x="168" y="132" fontSize="10" textAnchor="end" fill={DIM} fontFamily="ui-monospace, Menlo, monospace">
-            EJ/h {num(params.ej_ghz, 2)} GHz
-          </text>
+          <foreignObject x="55" y="121" width="113" height="20" style={{ color: DIM, fontSize: 10, textAlign: 'right' }}>
+            <MathText math={`E_J/h=${num(params.ej_ghz, 2)}\\,\\mathrm{GHz}`} />
+          </foreignObject>
         </g>
       )}
 
@@ -137,9 +138,9 @@ export default function Schematic({
           <text x="336" y="128" fontSize="11" fill={labelFill('capacitor')} fontWeight={selected === 'capacitor' ? 600 : 400}>
             shunt pads
           </text>
-          <text x="336" y="142" fontSize="10" fill={DIM} fontFamily="ui-monospace, Menlo, monospace">
-            EC/h {num(params.ec_ghz, 3)} GHz
-          </text>
+          <foreignObject x="336" y="132" width="130" height="20" style={{ color: DIM, fontSize: 10 }}>
+            <MathText math={`E_C/h=${num(params.ec_ghz, 3)}\\,\\mathrm{GHz}`} />
+          </foreignObject>
         </g>
       )}
 
@@ -155,9 +156,9 @@ export default function Schematic({
           />
           <path d="M90 86 H60 V150" stroke={stroke('gate')} strokeWidth={width('gate')} fill="none" />
           <circle cx="60" cy="168" r="18" fill="#fff" stroke={stroke('gate')} strokeWidth={width('gate')} />
-          <text x="60" y="172" fontSize="11" textAnchor="middle" fill={labelFill('gate')} fontFamily="ui-monospace, Menlo, monospace">
-            ng
-          </text>
+          <foreignObject x="47" y="157" width="26" height="22" style={{ color: labelFill('gate'), fontSize: 11, textAlign: 'center' }}>
+            <MathText math="n_g" />
+          </foreignObject>
           <path
             d="M60 186 V202 M48 202 H72 M52 208 H68 M56 214 H64"
             stroke={stroke('gate')}
@@ -167,9 +168,9 @@ export default function Schematic({
           <text x="60" y="58" fontSize="11" textAnchor="middle" fill={labelFill('gate')} fontWeight={selected === 'gate' ? 600 : 400}>
             charge gate
           </text>
-          <text x="60" y="236" fontSize="10" textAnchor="middle" fill={DIM} fontFamily="ui-monospace, Menlo, monospace">
-            ng {num(params.ng, 3)}
-          </text>
+          <foreignObject x="25" y="225" width="70" height="20" style={{ color: DIM, fontSize: 10, textAlign: 'center' }}>
+            <MathText math={`n_g=${num(params.ng, 3)}`} />
+          </foreignObject>
         </g>
       )}
     </svg>

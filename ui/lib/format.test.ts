@@ -108,7 +108,7 @@ describe('delta', () => {
 
 describe('paramSummary', () => {
   it('should describe the parameters a result came from', () => {
-    assert.equal(paramSummary(makeResult()), 'EJ 15.00 GHz · EC 0.300 GHz · ng 0.000 · ncut 30');
+    assert.equal(paramSummary(makeResult()), '$E_J$ 15.00 GHz · $E_C$ 0.300 GHz · $n_g$ 0.000 · $n_{\\mathrm{cut}}$ 30');
   });
 
   it('should return a dash when there is no result', () => {

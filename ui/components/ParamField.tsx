@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import MathText from '@/components/MathText';
 import { PARAMS, clampParam } from '@/lib/params';
 import type { ParamKey } from '@/lib/params';
 
@@ -8,11 +9,15 @@ interface ParamFieldProps {
   paramKey: ParamKey;
   value: number;
   onChange: (key: ParamKey, value: number) => void;
+  disabled?: boolean;
+  label?: string;
+  tourId?: string;
 }
 
 /** Slider plus exact numeric entry. Out-of-range text is rejected, not silently clamped. */
-export default function ParamField({ paramKey, value, onChange }: ParamFieldProps) {
+export default function ParamField({ paramKey, value, onChange, disabled = false, label, tourId }: ParamFieldProps) {
   const spec = PARAMS[paramKey];
+  const displayLabel = label ?? spec.label;
   const [text, setText] = useState(value.toFixed(spec.digits));
   const [invalid, setInvalid] = useState<string | null>(null);
   const [syncedValue, setSyncedValue] = useState(value);
@@ -25,6 +30,7 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
   }
 
   const commitText = (raw: string) => {
+    if (disabled) return;
     setText(raw);
     const parsed = Number(raw);
     if (raw.trim() === '' || !Number.isFinite(parsed)) {
@@ -33,6 +39,10 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
     }
     if (parsed < spec.min || parsed > spec.max) {
       setInvalid(`The model accepts ${spec.min} to ${spec.max}${spec.unit ? ` ${spec.unit}` : ''}.`);
+      return;
+    }
+    if (paramKey === 'ncut' && !Number.isInteger(parsed)) {
+      setInvalid('The charge basis cutoff must be a whole number.');
       return;
     }
     setInvalid(null);
@@ -45,15 +55,15 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
   const atDefault = value === spec.fallback;
 
   return (
-    <div className="field">
+    <div className="field" data-tour={tourId}>
       <div className="field-head">
-        <label htmlFor={`p-${paramKey}`}>{spec.label}</label>
-        <span className="sym">{spec.symbol}</span>
+        <label htmlFor={`p-${paramKey}`}>{displayLabel}</label>
+        <span className="sym"><MathText math={spec.symbol} /></span>
         <button
           type="button"
           className="reset"
           onClick={() => onChange(paramKey, spec.fallback)}
-          disabled={atDefault}
+          disabled={disabled || atDefault}
           style={atDefault ? { color: 'var(--text-3)', cursor: 'default' } : undefined}
         >
           reset
@@ -63,6 +73,7 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
         <input
           id={`p-${paramKey}`}
           type="range"
+          disabled={disabled}
           min={spec.min}
           max={spec.max}
           step={spec.step}
@@ -71,10 +82,12 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
         />
         <input
           className="num"
+          disabled={disabled}
           type="text"
           inputMode="decimal"
-          aria-label={`${spec.label} exact value`}
+          aria-label={`${displayLabel} exact value`}
           aria-invalid={invalid ? 'true' : 'false'}
+          aria-describedby={invalid ? `p-${paramKey}-error` : undefined}
           value={text}
           onChange={(event) => commitText(event.target.value)}
           onBlur={() => {
@@ -84,9 +97,9 @@ export default function ParamField({ paramKey, value, onChange }: ParamFieldProp
             }
           }}
         />
-        <span className="unit">{spec.unit}</span>
+        <span className="unit">{spec.unit && <MathText math={spec.unit === 'GHz' ? '\\mathrm{GHz}' : '2e'} />}</span>
       </div>
-      {invalid && <p className="field-msg">{invalid}</p>}
+      {invalid && <p className="field-msg" id={`p-${paramKey}-error`} role="status">{invalid}</p>}
     </div>
   );
 }
